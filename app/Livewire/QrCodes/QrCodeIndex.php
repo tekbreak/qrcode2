@@ -1,0 +1,94 @@
+<?php
+
+namespace App\Livewire\QrCodes;
+
+use App\Models\QrCode;
+use App\Services\QrCodeGeneratorService;
+use Livewire\Component;
+use Livewire\WithPagination;
+
+class QrCodeIndex extends Component
+{
+    use WithPagination;
+
+    public string $search = '';
+    public string $filterType = '';
+    public string $filterStatus = '';
+
+    public function updatingSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function delete(int $id): void
+    {
+        $qr = auth()->user()->qrCodes()->findOrFail($id);
+        $qr->delete();
+        session()->flash('status', __('qr.deleted'));
+    }
+
+    public function toggleStatus(int $id): void
+    {
+        $qr = auth()->user()->qrCodes()->findOrFail($id);
+        $qr->update(['status' => $qr->status === 'active' ? 'paused' : 'active']);
+
+        if ($qr->shortLink) {
+            $qr->shortLink->update(['is_active' => $qr->status === 'active']);
+        }
+    }
+
+    public function downloadPng(int $id): mixed
+    {
+        $qr = auth()->user()->qrCodes()->with('design', 'shortLink')->findOrFail($id);
+        $generator = app(QrCodeGeneratorService::class);
+        $png = $generator->generatePng($qr, 1000);
+
+        return response()->streamDownload(function () use ($png) {
+            echo $png;
+        }, str($qr->name)->slug() . '.png', ['Content-Type' => 'image/png']);
+    }
+
+    public function downloadSvg(int $id): mixed
+    {
+        $user = auth()->user();
+        $creditService = app(\App\Services\CreditService::class);
+
+        if (! $creditService->canAfford($user, \App\Enums\CreditAction::SvgDownload)) {
+            session()->flash('error', 'Insufficient credits for SVG download.');
+            return null;
+        }
+
+        $qr = $user->qrCodes()->with('design', 'shortLink')->findOrFail($id);
+        $generator = app(QrCodeGeneratorService::class);
+        $svg = $generator->generateSvg($qr);
+
+        $creditService->deduct($user, \App\Enums\CreditAction::SvgDownload, description: "SVG download: {$qr->name}");
+
+        return response()->streamDownload(function () use ($svg) {
+            echo $svg;
+        }, str($qr->name)->slug() . '.svg', ['Content-Type' => 'image/svg+xml']);
+    }
+
+    public function render()
+    {
+        $query = auth()->user()->qrCodes()
+            ->with('design', 'shortLink')
+            ->latest();
+
+        if ($this->search) {
+            $query->where('name', 'like', "%{$this->search}%");
+        }
+
+        if ($this->filterType) {
+            $query->where('type', $this->filterType);
+        }
+
+        if ($this->filterStatus) {
+            $query->where('status', $this->filterStatus);
+        }
+
+        return view('livewire.qr-codes.qr-code-index', [
+            'qrCodes' => $query->paginate(12),
+        ])->layout('layouts.app', ['title' => __('qr.my_qr_codes')]);
+    }
+}
