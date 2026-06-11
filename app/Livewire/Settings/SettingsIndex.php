@@ -68,8 +68,6 @@ class SettingsIndex extends Component
         }
 
         $user->qrCodes()->delete();
-        $user->creditBalance?->delete();
-        $user->creditTransactions()->delete();
         $user->delete();
 
         auth()->logout();

@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Analytics;
 
+use App\Enums\Feature;
 use App\Models\QrCode;
 use App\Services\AnalyticsService;
 use Livewire\Component;
@@ -13,8 +14,18 @@ class AnalyticsIndex extends Component
 
     public function mount(?QrCode $qrCode = null)
     {
+        $user = auth()->user();
+
+        if (! $user->hasFeature(Feature::BasicAnalytics)) {
+            abort(403, __('qr.analytics_not_available'));
+        }
+
         if ($qrCode?->exists) {
             $this->qrCodeId = $qrCode->id;
+        }
+
+        if (! $user->hasFeature(Feature::AdvancedAnalytics) && in_array($this->period, ['90d'], true)) {
+            $this->period = '30d';
         }
     }
 

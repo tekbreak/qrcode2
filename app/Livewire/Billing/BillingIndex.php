@@ -3,7 +3,6 @@
 namespace App\Livewire\Billing;
 
 use App\Models\Plan;
-use App\Services\CreditService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Livewire\Component;
@@ -17,7 +16,6 @@ class BillingIndex extends Component
     public function mount(): void
     {
         if (request()->boolean('success')) {
-            app(SubscriptionService::class)->syncCreditsForPlan(auth()->user());
             $this->successMessage = 'Subscription updated successfully!';
         }
 
@@ -54,7 +52,7 @@ class BillingIndex extends Component
                 'swapped' => 'Your plan has been updated.',
                 'downgraded' => auth()->user()->subscribed()
                     ? 'Subscription cancelled. You will keep access until the end of your billing period.'
-                    : 'You are now on the Free plan.',
+                    : 'You are now on the Starter plan.',
                 default => 'Plan updated successfully.',
             };
         } catch (\Throwable $e) {
@@ -63,51 +61,6 @@ class BillingIndex extends Component
                 ? $e->getMessage()
                 : 'Unable to update your plan. Please try again or contact support.';
         }
-    }
-
-    public function purchaseCredits(string $packSlug)
-    {
-        $this->reset('successMessage', 'errorMessage');
-
-        $user = auth()->user();
-        $packs = collect(config('qrcode.credit_packs'));
-        $pack = $packs->firstWhere('slug', $packSlug);
-
-        if (! $pack) {
-            $this->errorMessage = 'Invalid credit pack.';
-            return;
-        }
-
-        if ($pack['stripe_price_id']) {
-            try {
-                $checkout = $user->checkout([$pack['stripe_price_id'] => 1], [
-                    'success_url' => route('credits.purchase.success').'?session_id={CHECKOUT_SESSION_ID}',
-                    'cancel_url' => route('billing.index').'?cancelled=1',
-                    'metadata' => [
-                        'credit_pack' => $pack['slug'],
-                        'credits' => $pack['credits'],
-                        'user_id' => $user->id,
-                    ],
-                ]);
-
-                return $this->redirect($checkout->asStripeCheckoutSession()->url, navigate: false);
-            } catch (\Throwable $e) {
-                report($e);
-                $this->errorMessage = 'Unable to start checkout. Please verify your Stripe configuration.';
-                return;
-            }
-        }
-
-        $creditService = app(CreditService::class);
-        $creditService->credit(
-            $user,
-            \App\Enums\CreditAction::CreditPurchase,
-            $pack['credits'],
-            "Purchased {$pack['credits']} credits ({$pack['slug']}) [dev mode]",
-            ['pack' => $pack['slug'], 'dev_mode' => true]
-        );
-
-        $this->successMessage = "Added {$pack['credits']} credits to your account (dev mode — no charge).";
     }
 
     public function manageBilling()
@@ -129,7 +82,6 @@ class BillingIndex extends Component
             'plans' => $plans,
             'currentTier' => $user->planTier(),
             'isSubscribed' => $user->subscribed(),
-            'creditPacks' => config('qrcode.credit_packs'),
         ])->layout('layouts.app', ['title' => __('nav.billing')]);
     }
 }

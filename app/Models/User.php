@@ -8,7 +8,6 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Cashier\Billable;
@@ -59,27 +58,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(QrCode::class);
     }
 
-    public function creditBalance(): HasOne
-    {
-        return $this->hasOne(CreditBalance::class);
-    }
-
-    public function creditTransactions(): HasMany
-    {
-        return $this->hasMany(CreditTransaction::class);
-    }
-
-    public function createCreditBalance(?PlanTier $tier = null): CreditBalance
-    {
-        $tier ??= PlanTier::Free;
-
-        return $this->creditBalance()->create([
-            'balance' => $tier->monthlyCredits(),
-            'monthly_allowance' => $tier->monthlyCredits(),
-            'resets_at' => now()->addMonth()->startOfMonth(),
-        ]);
-    }
-
     public function currentTeam()
     {
         if ($this->current_team_id) {
@@ -92,7 +70,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function planTier(): PlanTier
     {
         if (! $this->subscribed()) {
-            return PlanTier::Free;
+            return PlanTier::Starter;
         }
 
         $subscription = $this->subscription();
@@ -101,7 +79,7 @@ class User extends Authenticatable implements MustVerifyEmail
                 ->orWhere('stripe_yearly_price_id', $subscription->stripe_price);
         })->first();
 
-        return $plan ? PlanTier::from($plan->slug) : PlanTier::Free;
+        return $plan ? PlanTier::from($plan->slug) : PlanTier::Starter;
     }
 
     public function hasFeature(Feature|string $feature): bool
@@ -109,14 +87,9 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->planTier()->hasFeature($feature);
     }
 
-    public function hasUnlimitedCredits(): bool
+    public function hasFreeDynamicEdits(): bool
     {
-        return $this->planTier()->hasUnlimitedCredits();
-    }
-
-    public function hasCredits(int $amount = 1): bool
-    {
-        return $this->hasUnlimitedCredits() || ($this->creditBalance?->balance ?? 0) >= $amount;
+        return $this->planTier() === PlanTier::Enterprise;
     }
 
     public function qrCodeCount(bool $isDynamic = false): int

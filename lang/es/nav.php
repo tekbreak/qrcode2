@@ -8,7 +8,6 @@ return [
     'settings' => 'Configuración',
     'admin' => 'Admin',
     'admin_panel' => 'Panel de Admin',
-    'credits' => 'Créditos',
     'new_qr_code' => 'Nuevo código QR',
     'logout' => 'Cerrar sesión',
 ];

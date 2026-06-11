@@ -29,10 +29,6 @@ class GoogleController extends Controller
             ]
         );
 
-        if ($user->wasRecentlyCreated) {
-            $user->createCreditBalance();
-        }
-
         Auth::login($user, remember: true);
 
         return redirect()->intended(route('dashboard'));

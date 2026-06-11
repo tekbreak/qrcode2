@@ -4,7 +4,6 @@ namespace App\Enums;
 
 enum PlanTier: string
 {
-    case Free = 'free';
     case Starter = 'starter';
     case Pro = 'pro';
     case Enterprise = 'enterprise';
@@ -12,29 +11,17 @@ enum PlanTier: string
     public function label(): string
     {
         return match ($this) {
-            self::Free => 'Free',
             self::Starter => 'Starter',
             self::Pro => 'Pro',
             self::Enterprise => 'Enterprise',
         };
     }
 
-    public function monthlyCredits(): int
-    {
-        return match ($this) {
-            self::Free => 5,
-            self::Starter => 50,
-            self::Pro => 200,
-            self::Enterprise => 0,
-        };
-    }
-
     public function maxStaticQrCodes(): ?int
     {
         return match ($this) {
-            self::Free => 3,
-            self::Starter => 10,
-            self::Pro => 50,
+            self::Starter => 5,
+            self::Pro => null,
             self::Enterprise => null,
         };
     }
@@ -47,26 +34,24 @@ enum PlanTier: string
     public function priceMonthly(): int
     {
         return match ($this) {
-            self::Free => 0,
-            self::Starter => 500,
-            self::Pro => 1500,
-            self::Enterprise => 5000,
+            self::Starter => 0,
+            self::Pro => 1000,
+            self::Enterprise => 3900,
         };
     }
 
     public function priceYearly(): int
     {
         return match ($this) {
-            self::Free => 0,
-            self::Starter => 5000,
-            self::Pro => 15000,
-            self::Enterprise => 50000,
+            self::Starter => 0,
+            self::Pro => 9900,
+            self::Enterprise => 38900,
         };
     }
 
-    public function hasUnlimitedCredits(): bool
+    public function hasYearlyBilling(): bool
     {
-        return $this === self::Enterprise;
+        return $this->priceYearly() > 0;
     }
 
     /**
@@ -75,17 +60,10 @@ enum PlanTier: string
     public function features(): array
     {
         return match ($this) {
-            self::Free => [
-                Feature::ExportPng,
-                Feature::BasicCustomization,
-                Feature::BasicAnalytics,
-            ],
             self::Starter => [
                 Feature::ExportPng,
-                Feature::ExportJpg,
                 Feature::BasicCustomization,
                 Feature::BasicAnalytics,
-                Feature::AdvancedAnalytics,
             ],
             self::Pro => [
                 Feature::ExportPng,
@@ -96,8 +74,8 @@ enum PlanTier: string
                 Feature::FullCustomization,
                 Feature::BasicAnalytics,
                 Feature::AdvancedAnalytics,
-                Feature::CustomDomains,
                 Feature::ApiAccess,
+                Feature::BulkOperations,
             ],
             self::Enterprise => Feature::cases(),
         };
@@ -136,11 +114,24 @@ enum PlanTier: string
         $lines[] = implode(' + ', $formats) . ' downloads';
         $lines[] = $this->hasFeature(Feature::AdvancedAnalytics) ? 'Advanced analytics' : 'Basic analytics';
 
-        if ($this->hasFeature(Feature::CustomDomains)) $lines[] = 'Custom domains';
-        if ($this->hasFeature(Feature::ApiAccess)) $lines[] = 'API access';
-        if ($this->hasFeature(Feature::BulkOperations)) $lines[] = 'Bulk operations';
-        if ($this->hasFeature(Feature::Teams)) $lines[] = 'Team management';
-        if ($this->hasFeature(Feature::PrioritySupport)) $lines[] = 'Priority support';
+        if ($this->hasFeature(Feature::CustomDomains)) {
+            $lines[] = 'Custom domains';
+        }
+        if ($this->hasFeature(Feature::ApiAccess)) {
+            $lines[] = 'API access';
+        }
+        if ($this->hasFeature(Feature::BulkOperations)) {
+            $lines[] = 'Bulk operations';
+        }
+        if ($this->hasFeature(Feature::Teams)) {
+            $lines[] = 'Team management';
+        }
+        if ($this->hasFeature(Feature::PrioritySupport)) {
+            $lines[] = 'Priority support';
+        }
+        if ($this === self::Enterprise) {
+            $lines[] = 'Unlimited dynamic QR edits';
+        }
 
         return $lines;
     }

@@ -2,6 +2,7 @@
 
 namespace App\Livewire\QrCodes;
 
+use App\Enums\Feature;
 use App\Jobs\BulkGenerateQrCodesJob;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -13,6 +14,13 @@ class BulkGenerator extends Component
     public $csvFile = null;
     public array $parsedItems = [];
     public bool $processing = false;
+
+    public function mount(): void
+    {
+        if (! auth()->user()->hasFeature(Feature::BulkOperations)) {
+            abort(403, __('qr.bulk_not_available'));
+        }
+    }
 
     public function parseCsv()
     {
@@ -41,7 +49,9 @@ class BulkGenerator extends Component
 
     public function generate()
     {
-        if (empty($this->parsedItems)) return;
+        if (empty($this->parsedItems)) {
+            return;
+        }
 
         $items = array_map(fn ($item) => [
             'name' => $item['name'],

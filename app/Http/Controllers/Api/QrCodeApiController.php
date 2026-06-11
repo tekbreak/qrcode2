@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\CreditAction;
+use App\Enums\Feature;
 use App\Enums\QrCodeType;
 use App\Http\Controllers\Controller;
 use App\Models\QrCode;
 use App\Models\ShortLink;
-use App\Services\CreditService;
 use App\Services\QrCodeGeneratorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -16,6 +15,10 @@ class QrCodeApiController extends Controller
 {
     public function index(Request $request)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $qrCodes = $request->user()->qrCodes()
             ->with('design', 'shortLink')
             ->latest()
@@ -26,6 +29,10 @@ class QrCodeApiController extends Controller
 
     public function show(Request $request, QrCode $qrCode)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $this->authorize('view', $qrCode);
 
         return response()->json($qrCode->load('design', 'shortLink'));
@@ -33,6 +40,10 @@ class QrCodeApiController extends Controller
 
     public function store(Request $request)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'type' => 'required|string|in:' . implode(',', array_column(QrCodeType::cases(), 'value')),
@@ -48,21 +59,11 @@ class QrCodeApiController extends Controller
         }
 
         $user = $request->user();
-        $creditService = app(CreditService::class);
-
         $isDynamic = $request->boolean('is_dynamic', true);
 
         if (! $user->canCreateQrCode(isDynamic: $isDynamic)) {
             return response()->json(['error' => 'Plan QR code limit reached.'], 403);
         }
-
-        if ($isDynamic) {
-            if (! $creditService->canAfford($user, CreditAction::EditDynamicQr)) {
-                return response()->json(['error' => 'Insufficient credits.'], 402);
-            }
-        }
-
-        $creditService->deduct($user, CreditAction::ApiCall, description: 'API: Create QR code');
 
         $qrCode = QrCode::create([
             'user_id' => $user->id,
@@ -90,8 +91,6 @@ class QrCodeApiController extends Controller
                 'destination_url' => $qrCode->content_data['url'] ?? '',
                 'is_active' => true,
             ]);
-
-            $creditService->deduct($user, CreditAction::EditDynamicQr, description: "API: Created QR: {$qrCode->name}");
         }
 
         return response()->json($qrCode->load('design', 'shortLink'), 201);
@@ -99,6 +98,10 @@ class QrCodeApiController extends Controller
 
     public function update(Request $request, QrCode $qrCode)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $this->authorize('update', $qrCode);
 
         $qrCode->update($request->only(['name', 'content_data']));
@@ -119,6 +122,10 @@ class QrCodeApiController extends Controller
 
     public function destroy(Request $request, QrCode $qrCode)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $this->authorize('delete', $qrCode);
 
         $qrCode->delete();
@@ -128,17 +135,27 @@ class QrCodeApiController extends Controller
 
     public function download(Request $request, QrCode $qrCode)
     {
+        if (! $request->user()->hasFeature(Feature::ApiAccess)) {
+            return response()->json(['error' => 'API access is not available on your plan.'], 403);
+        }
+
         $this->authorize('download', $qrCode);
 
         $format = $request->input('format', 'png');
         $generator = app(QrCodeGeneratorService::class);
 
         if ($format === 'svg') {
+            if (! $request->user()->hasFeature(Feature::ExportSvg)) {
+                return response()->json(['error' => 'SVG export is not available on your plan.'], 403);
+            }
+
             $svg = $generator->generateSvg($qrCode);
+
             return response($svg, 200, ['Content-Type' => 'image/svg+xml']);
         }
 
         $png = $generator->generatePng($qrCode, $request->integer('size', 1000));
+
         return response($png, 200, ['Content-Type' => 'image/png']);
     }
 }

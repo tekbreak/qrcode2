@@ -2,6 +2,8 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../vendor/livewire/livewire/src/**/*.blade.php';
 @source '../../storage/framework/views/*.php';
@@ -22,6 +24,26 @@
     label:has(input[type="checkbox"]),
     label:has(input[type="radio"]) {
         cursor: pointer;
+    }
+
+    html {
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
+    }
+
+    .dark :is(
+        input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']):not([type='color']),
+        select,
+        textarea
+    ) {
+        @apply border-zinc-700 bg-zinc-800 text-gray-100;
+    }
+
+    .dark :is(input, select, textarea):disabled {
+        @apply bg-zinc-900 text-gray-500;
     }
 }
 

@@ -49,7 +49,7 @@
                 <tr>
                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">User</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">QR Codes</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Credits</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Plan</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Role</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Joined</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('common.actions') }}</th>
@@ -65,7 +65,7 @@
                             </div>
                         </td>
                         <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{{ $user->qr_codes_count }}</td>
-                        <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{{ number_format($user->creditBalance?->balance ?? 0) }}</td>
+                        <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{{ $user->planTier()->label() }}</td>
                         <td class="whitespace-nowrap px-4 py-3">
                             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {{ $user->is_admin ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600' }}">
                                 {{ $user->is_admin ? 'Admin' : 'User' }}

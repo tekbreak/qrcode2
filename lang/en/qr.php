@@ -9,7 +9,12 @@ return [
     'deleted' => 'QR code deleted.',
     'max_dynamic_reached' => 'You have reached the maximum of :max dynamic QR codes for your plan.',
     'plan_limit_reached' => 'You have reached the maximum number of QR codes for your plan.',
-    'insufficient_credits' => 'Insufficient credits. Please upgrade your plan or purchase more credits.',
+    'dynamic_plan_limit_reached' => 'You have reached the maximum number of dynamic QR codes for your plan.',
+    'paid_action_cancelled' => 'Payment was cancelled. Your QR code was not updated.',
+    'svg_not_available' => 'SVG export is not available on your plan. Upgrade to Pro.',
+    'bulk_not_available' => 'Bulk generation is not available on your plan. Upgrade to Pro.',
+    'analytics_not_available' => 'Analytics is not available on your plan.',
+    'teams_not_available' => 'Team management is not available on your plan. Upgrade to Enterprise.',
 
     'step_content' => 'Content',
     'step_design' => 'Design',

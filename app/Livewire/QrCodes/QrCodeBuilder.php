@@ -2,11 +2,11 @@
 
 namespace App\Livewire\QrCodes;
 
-use App\Enums\CreditAction;
+use App\Enums\Feature;
 use App\Enums\QrCodeType;
 use App\Models\QrCode;
 use App\Models\ShortLink;
-use App\Services\CreditService;
+use App\Services\PaidActionService;
 use App\Services\QrCodeGeneratorService;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Url;
@@ -31,7 +31,6 @@ class QrCodeBuilder extends Component
     public string $name = '';
     public string $type = 'url';
     public bool $isDynamic = false;
-    public bool $confirmCreditCharge = false;
 
     // Content data (varies by type)
     public string $url = '';
@@ -549,28 +548,54 @@ class QrCodeBuilder extends Component
 
     public function save()
     {
+        $this->validateStep();
+
         $user = auth()->user();
-        $creditService = app(CreditService::class);
+        $paidActionService = app(PaidActionService::class);
         $qrType = QrCodeType::from($this->type);
         $isDynamicCapable = $qrType->isDynamic();
 
         if (! $this->editing && ! $user->canCreateQrCode(isDynamic: false)) {
             $this->addError('name', __('qr.plan_limit_reached'));
+
             return;
         }
 
-        if ($this->editing && $isDynamicCapable) {
-            if (! $this->confirmCreditCharge) {
-                $this->addError('confirmCreditCharge', 'You must confirm the credit charge before saving.');
-                return;
-            }
+        if ($this->editing && $isDynamicCapable && ! $this->qrCode->shortLink) {
+            if (! $user->canCreateQrCode(isDynamic: true)) {
+                $this->addError('name', __('qr.dynamic_plan_limit_reached'));
 
-            if (! $creditService->canAfford($user, CreditAction::EditDynamicQr)) {
-                $this->addError('confirmCreditCharge', __('qr.insufficient_credits'));
                 return;
             }
         }
 
+        if ($this->customSlug && ShortLink::where('slug', $this->customSlug)
+            ->when($this->qrCode?->shortLink, fn ($q) => $q->where('id', '!=', $this->qrCode->shortLink->id))
+            ->exists()) {
+            $this->addError('customSlug', 'This slug is already taken.');
+
+            return;
+        }
+
+        $pendingData = $this->buildPendingData();
+
+        if ($this->editing && $isDynamicCapable && $this->qrCode->shortLink) {
+            $actionType = $paidActionService->detectActionType($this->qrCode, $pendingData);
+
+            if ($actionType && $paidActionService->requiresPayment($user, $this->qrCode, $pendingData)) {
+                return $paidActionService->createCheckout($user, $this->qrCode, $actionType, $pendingData);
+            }
+        }
+
+        $this->applySave($pendingData);
+
+        session()->flash('status', $this->editing ? __('qr.updated') : __('qr.created'));
+
+        return redirect()->route('qr-codes.index');
+    }
+
+    protected function buildPendingData(): array
+    {
         $logoPath = $this->existingLogo;
         if ($this->selectedIcon) {
             $logoPath = 'icons/qr-center-icons/' . $this->selectedIcon . '.svg';
@@ -583,25 +608,19 @@ class QrCodeBuilder extends Component
             $this->existingFileUrl = asset('storage/' . $filePath);
         }
 
-        $qrData = [
-            'user_id' => $user->id,
-            'team_id' => $user->current_team_id,
+        $contentData = $this->getContentData();
+
+        return [
             'name' => $this->name,
             'type' => $this->type,
-            'is_dynamic' => $this->editing && $isDynamicCapable ? true : false,
-            'content_data' => $this->getContentData(),
-        ];
-
-        if ($this->editing) {
-            $this->qrCode->update($qrData);
-            $qr = $this->qrCode;
-        } else {
-            $qr = QrCode::create($qrData);
-        }
-
-        $qr->design()->updateOrCreate(
-            ['qr_code_id' => $qr->id],
-            [
+            'content_data' => $contentData,
+            'destination_url' => $contentData['url'] ?? '',
+            'custom_slug' => $this->customSlug ?: null,
+            'link_password' => $this->linkPassword,
+            'expires_at' => $this->expiresAt,
+            'max_scans' => $this->maxScans,
+            'is_active' => true,
+            'design' => [
                 'fg_color' => $this->fgColor,
                 'bg_color' => $this->bgColor,
                 'dot_style' => $this->dotStyle,
@@ -616,43 +635,69 @@ class QrCodeBuilder extends Component
                     'type' => $this->gradientType,
                 ] : null,
                 'logo_path' => $logoPath,
-            ]
+            ],
+        ];
+    }
+
+    protected function applySave(array $pendingData): void
+    {
+        $user = auth()->user();
+        $qrType = QrCodeType::from($this->type);
+        $isDynamicCapable = $qrType->isDynamic();
+
+        $qrData = [
+            'user_id' => $user->id,
+            'team_id' => $user->current_team_id,
+            'name' => $pendingData['name'],
+            'type' => $pendingData['type'],
+            'is_dynamic' => $this->editing && $isDynamicCapable ? true : false,
+            'content_data' => $pendingData['content_data'],
+        ];
+
+        if ($this->editing) {
+            $this->qrCode->update($qrData);
+            $qr = $this->qrCode->fresh();
+        } else {
+            $qr = QrCode::create($qrData);
+        }
+
+        $qr->design()->updateOrCreate(
+            ['qr_code_id' => $qr->id],
+            $pendingData['design']
         );
 
         if ($this->editing && $isDynamicCapable) {
-            $destinationUrl = $this->getContentData()['url'] ?? '';
+            $destinationUrl = $pendingData['destination_url'];
 
             if ($qr->shortLink) {
-                $qr->shortLink->update([
+                $update = [
                     'destination_url' => $destinationUrl,
-                    'password_hash' => $this->linkPassword ? bcrypt($this->linkPassword) : null,
-                    'expires_at' => $this->expiresAt ? \Carbon\Carbon::parse($this->expiresAt) : null,
-                    'max_scans' => $this->maxScans,
-                ]);
-            } else {
-                $slug = $this->customSlug ?: ShortLink::generateSlug();
+                    'expires_at' => $pendingData['expires_at'] ? \Carbon\Carbon::parse($pendingData['expires_at']) : $qr->shortLink->expires_at,
+                    'max_scans' => $pendingData['max_scans'],
+                ];
 
-                if ($this->customSlug && ShortLink::where('slug', $this->customSlug)->exists()) {
-                    $this->addError('customSlug', 'This slug is already taken.');
-                    return;
+                if (filled($pendingData['link_password'])) {
+                    $update['password_hash'] = bcrypt($pendingData['link_password']);
                 }
 
+                $qr->shortLink->update($update);
+            } else {
                 ShortLink::create([
                     'qr_code_id' => $qr->id,
-                    'slug' => $slug,
+                    'slug' => $pendingData['custom_slug'] ?: ShortLink::generateSlug(),
                     'destination_url' => $destinationUrl,
-                    'password_hash' => $this->linkPassword ? bcrypt($this->linkPassword) : null,
-                    'expires_at' => $this->expiresAt ? \Carbon\Carbon::parse($this->expiresAt) : null,
-                    'max_scans' => $this->maxScans,
+                    'password_hash' => $pendingData['link_password'] ? bcrypt($pendingData['link_password']) : null,
+                    'expires_at' => $pendingData['expires_at'] ? \Carbon\Carbon::parse($pendingData['expires_at']) : null,
+                    'max_scans' => $pendingData['max_scans'],
                     'is_active' => true,
                 ]);
             }
-
-            $creditService->deduct($user, CreditAction::EditDynamicQr, description: "Edited QR: {$this->name}");
         }
+    }
 
-        session()->flash('status', $this->editing ? __('qr.updated') : __('qr.created'));
-        return redirect()->route('qr-codes.index');
+    public function canUseFullCustomization(): bool
+    {
+        return auth()->user()->hasFeature(Feature::FullCustomization);
     }
 
     public function downloadPng()

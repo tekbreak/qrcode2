@@ -5,7 +5,9 @@ namespace Tests\Feature\Livewire;
 use App\Enums\PlanTier;
 use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Models\QrCode;
+use App\Models\ShortLink;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -13,6 +15,13 @@ use Tests\TestCase;
 class QrCodeBuilderTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(\Database\Seeders\PlanSeeder::class);
+    }
 
     public function test_builder_renders_for_authenticated_user(): void
     {
@@ -40,7 +49,6 @@ class QrCodeBuilderTest extends TestCase
     public function test_save_creates_static_qr_code(): void
     {
         $user = User::factory()->create();
-        $user->createCreditBalance(PlanTier::Free);
 
         Livewire::actingAs($user)
             ->test(QrCodeBuilder::class)
@@ -60,15 +68,14 @@ class QrCodeBuilderTest extends TestCase
     public function test_save_blocks_creation_when_plan_limit_reached(): void
     {
         $user = User::factory()->create();
-        $user->createCreditBalance(PlanTier::Free);
-        QrCode::factory()->count(3)->create([
+        QrCode::factory()->count(5)->create([
             'user_id' => $user->id,
             'is_dynamic' => false,
         ]);
 
         Livewire::actingAs($user)
             ->test(QrCodeBuilder::class)
-            ->set('name', 'Fourth QR')
+            ->set('name', 'Sixth QR')
             ->set('type', 'text')
             ->set('text', 'Too many')
             ->call('save')
@@ -76,14 +83,13 @@ class QrCodeBuilderTest extends TestCase
 
         $this->assertDatabaseMissing('qr_codes', [
             'user_id' => $user->id,
-            'name' => 'Fourth QR',
+            'name' => 'Sixth QR',
         ]);
     }
 
-    public function test_editing_dynamic_qr_requires_credit_confirmation(): void
+    public function test_first_dynamic_activation_does_not_require_payment(): void
     {
         $user = User::factory()->create();
-        $user->createCreditBalance(PlanTier::Starter);
 
         $qrCode = QrCode::factory()->create([
             'user_id' => $user->id,
@@ -95,8 +101,44 @@ class QrCodeBuilderTest extends TestCase
         Livewire::actingAs($user)
             ->test(QrCodeBuilder::class, ['qrCode' => $qrCode])
             ->set('url', 'https://updated.example.com')
-            ->set('confirmCreditCharge', false)
             ->call('save')
-            ->assertHasErrors(['confirmCreditCharge']);
+            ->assertRedirect(route('qr-codes.index'));
+
+        $this->assertTrue($qrCode->fresh()->is_dynamic);
+        $this->assertDatabaseHas('short_links', [
+            'qr_code_id' => $qrCode->id,
+            'destination_url' => 'https://updated.example.com',
+        ]);
+    }
+
+    public function test_enterprise_user_can_edit_dynamic_qr_without_payment(): void
+    {
+        $user = User::factory()->create();
+        app(SubscriptionService::class)->subscribe($user, 'enterprise', false);
+
+        $qrCode = QrCode::factory()->create([
+            'user_id' => $user->id,
+            'type' => 'url',
+            'is_dynamic' => true,
+            'content_data' => ['url' => 'https://example.com'],
+        ]);
+
+        ShortLink::create([
+            'qr_code_id' => $qrCode->id,
+            'slug' => ShortLink::generateSlug(),
+            'destination_url' => 'https://example.com',
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(QrCodeBuilder::class, ['qrCode' => $qrCode])
+            ->set('url', 'https://enterprise-updated.example.com')
+            ->call('save')
+            ->assertRedirect(route('qr-codes.index'));
+
+        $this->assertSame(
+            'https://enterprise-updated.example.com',
+            $qrCode->fresh()->shortLink->destination_url
+        );
     }
 }

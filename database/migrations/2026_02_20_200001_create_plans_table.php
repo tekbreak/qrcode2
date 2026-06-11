@@ -17,7 +17,7 @@ return new class extends Migration
             $table->integer('price_yearly')->default(0);
             $table->string('stripe_monthly_price_id')->nullable();
             $table->string('stripe_yearly_price_id')->nullable();
-            $table->integer('monthly_credits')->default(0);
+            $table->integer('max_static_qr')->nullable();
             $table->integer('max_dynamic_qr')->nullable();
             $table->json('features')->nullable();
             $table->boolean('is_active')->default(true);

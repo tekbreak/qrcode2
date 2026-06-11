@@ -9,7 +9,12 @@ return [
     'deleted' => 'Código QR eliminado.',
     'max_dynamic_reached' => 'Has alcanzado el máximo de :max códigos QR dinámicos para tu plan.',
     'plan_limit_reached' => 'Has alcanzado el número máximo de códigos QR para tu plan.',
-    'insufficient_credits' => 'Créditos insuficientes. Actualiza tu plan o compra más créditos.',
+    'dynamic_plan_limit_reached' => 'Has alcanzado el número máximo de códigos QR dinámicos para tu plan.',
+    'paid_action_cancelled' => 'El pago fue cancelado. Tu código QR no se actualizó.',
+    'svg_not_available' => 'La exportación SVG no está disponible en tu plan. Actualiza a Pro.',
+    'bulk_not_available' => 'La generación masiva no está disponible en tu plan. Actualiza a Pro.',
+    'analytics_not_available' => 'Las analíticas no están disponibles en tu plan.',
+    'teams_not_available' => 'La gestión de equipos no está disponible en tu plan. Actualiza a Enterprise.',
 
     'step_content' => 'Contenido',
     'step_design' => 'Diseño',

@@ -2,13 +2,10 @@
 
 namespace App\Services;
 
-use App\Enums\PlanTier;
 use App\Models\Plan;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Str;
-use Laravel\Cashier\Cashier;
-use Laravel\Cashier\Events\WebhookHandled;
 use Laravel\Cashier\Subscription;
 
 class SubscriptionService
@@ -18,8 +15,8 @@ class SubscriptionService
         $user = $user->fresh();
         $plan = Plan::where('slug', $planSlug)->firstOrFail();
 
-        if ($planSlug === 'free') {
-            return $this->downgradeToFree($user);
+        if ($planSlug === 'starter' && $plan->price_monthly === 0) {
+            return $this->downgradeToStarter($user);
         }
 
         $priceId = $this->resolvePriceId($plan, $yearly);
@@ -37,7 +34,6 @@ class SubscriptionService
 
             if ($this->usesStripeCheckout($priceId)) {
                 $subscription->swap($priceId);
-                $this->syncCreditsForPlan($user);
 
                 return 'swapped';
             }
@@ -61,7 +57,7 @@ class SubscriptionService
         return 'dev_applied';
     }
 
-    public function downgradeToFree(User $user): string
+    public function downgradeToStarter(User $user): string
     {
         $user = $user->fresh();
         $subscription = $this->defaultSubscription($user);
@@ -75,59 +71,7 @@ class SubscriptionService
             }
         }
 
-        $this->syncCreditsForPlan($user);
-
         return 'downgraded';
-    }
-
-    public function syncCreditsForPlan(User $user): void
-    {
-        $tier = $user->fresh()->planTier();
-
-        if ($tier->hasUnlimitedCredits()) {
-            return;
-        }
-
-        $allowance = $tier->monthlyCredits();
-        $balance = $user->creditBalance;
-
-        if (! $balance) {
-            $user->createCreditBalance($tier);
-
-            return;
-        }
-
-        $balance->update([
-            'balance' => $allowance,
-            'monthly_allowance' => $allowance,
-            'resets_at' => now()->addMonth()->startOfMonth(),
-        ]);
-    }
-
-    public function handleWebhook(WebhookHandled $event): void
-    {
-        $type = $event->payload['type'] ?? '';
-
-        if (! in_array($type, [
-            'customer.subscription.created',
-            'customer.subscription.updated',
-            'customer.subscription.deleted',
-            'checkout.session.completed',
-        ], true)) {
-            return;
-        }
-
-        $customerId = $this->extractCustomerId($event->payload);
-
-        if (! $customerId) {
-            return;
-        }
-
-        $user = Cashier::findBillable($customerId);
-
-        if ($user instanceof User) {
-            $this->syncCreditsForPlan($user);
-        }
     }
 
     public function resolvePriceId(Plan $plan, bool $yearly): ?string
@@ -160,17 +104,6 @@ class SubscriptionService
             'stripe_price' => $priceId,
             'quantity' => 1,
         ]);
-
-        $this->syncCreditsForPlan($user);
-    }
-
-    protected function extractCustomerId(array $payload): ?string
-    {
-        $object = $payload['data']['object'] ?? [];
-
-        return $object['customer']
-            ?? $object['customer_id']
-            ?? null;
     }
 
     protected function defaultSubscription(User $user): ?Subscription

@@ -2,7 +2,8 @@
 
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\MagicLinkController;
-use App\Http\Controllers\CreditPurchaseController;
+use App\Http\Controllers\LanguageController;
+use App\Http\Controllers\PaidActionController;
 use App\Livewire\Admin\AdminDashboard;
 use App\Livewire\Analytics\AnalyticsIndex;
 use App\Livewire\Auth\ForgotPassword;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('landing.index');
 })->name('landing');
+
+Route::post('/language/switch', [LanguageController::class, 'switch'])->name('language.switch');
 
 // Guest auth routes
 Route::middleware('guest')->group(function () {
@@ -57,7 +60,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/analytics/{qrCode}', AnalyticsIndex::class)->name('analytics.show');
 
     Route::get('/billing', BillingIndex::class)->name('billing.index');
-    Route::get('/billing/credits/success', [CreditPurchaseController::class, 'success'])->name('credits.purchase.success');
+    Route::get('/paid-actions/{paidAction}/success', [PaidActionController::class, 'success'])->name('paid-actions.success');
+    Route::get('/paid-actions/{paidAction}/cancel', [PaidActionController::class, 'cancel'])->name('paid-actions.cancel');
 
     Route::get('/settings', SettingsIndex::class)->name('settings.index');
 

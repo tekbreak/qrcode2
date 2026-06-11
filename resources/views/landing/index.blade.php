@@ -3,8 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ config('app.name') }} - Create & Track QR Codes</title>
-    <meta name="description" content="Create beautiful, trackable QR codes for your business. Dynamic QR codes with real-time analytics, custom designs, and powerful link management.">
+    <meta name="theme-color" content="#ffffff">
+    <title>{{ config('app.name') }} - {{ __('landing.meta_title') }}</title>
+    <meta name="description" content="{{ __('landing.meta_description') }}">
+    @include('partials.theme-init')
+    @include('partials.exclusive-dropdown')
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,50 +16,51 @@
     <style>[x-cloak] { display: none !important; }</style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="bg-white antialiased">
+<body class="bg-white antialiased dark:bg-zinc-950">
     {{-- Navbar --}}
-    <nav class="sticky top-0 z-50 border-b bg-white/90 backdrop-blur-md">
+    <nav class="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/90">
         <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-            <a href="/" class="flex items-center gap-2 text-xl font-bold text-primary-600">
+            <a href="/" class="flex items-center gap-2 text-xl font-bold text-primary-600 dark:text-primary-400">
                 <svg class="h-8 w-8" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm11-2h2v2h-2v-2zm-3 0h2v2h-2v-2zm6 0h2v2h-2v-2zm-3 3h2v2h-2v-2zm3 0h2v2h-2v-2zm-6 3h2v2h-2v-2zm3 0h2v2h-2v-2zm3 0h2v2h-2v-2z"/></svg>
                 {{ config('app.name') }}
             </a>
             <div class="hidden items-center gap-6 sm:flex">
-                <a href="#features" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition">Features</a>
-                <a href="#pricing" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition">Pricing</a>
-                <a href="#faq" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition">FAQ</a>
+                <a href="#features" class="text-sm font-medium text-gray-600 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.features') }}</a>
+                <a href="#pricing" class="text-sm font-medium text-gray-600 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.pricing') }}</a>
+                <a href="#faq" class="text-sm font-medium text-gray-600 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.faq') }}</a>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <x-theme-switcher />
+                <x-language-switcher />
                 @auth
-                    <a href="{{ route('dashboard') }}" class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition">Dashboard</a>
+                    <a href="{{ route('dashboard') }}" class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700">{{ __('landing.nav.dashboard') }}</a>
                 @else
-                    <a href="{{ route('login') }}" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition">Sign in</a>
-                    <a href="{{ route('register') }}" class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition">Get Started Free</a>
+                    <a href="{{ route('login') }}" class="text-sm font-medium text-gray-600 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.sign_in') }}</a>
+                    <a href="{{ route('register') }}" class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700">{{ __('landing.nav.get_started') }}</a>
                 @endauth
             </div>
         </div>
     </nav>
 
     {{-- Hero --}}
-    <section class="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-blue-50">
+    <section class="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-blue-50 dark:from-zinc-900 dark:via-zinc-950 dark:to-zinc-900">
         <div class="mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-28 lg:px-8 lg:py-36">
             <div class="mx-auto max-w-3xl text-center">
-                <h1 class="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-                    Create <span class="text-primary-600">QR Codes</span> That
-                    <span class="text-primary-600">Work</span> For You
+                <h1 class="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl dark:text-gray-100">
+                    {{ __('landing.hero.title_prefix') }} <span class="text-primary-600 dark:text-primary-400">{{ __('landing.hero.title_highlight_1') }}</span> {{ __('landing.hero.title_middle') }}
+                    <span class="text-primary-600 dark:text-primary-400">{{ __('landing.hero.title_highlight_2') }}</span> {{ __('landing.hero.title_suffix') }}
                 </h1>
-                <p class="mt-6 text-lg text-gray-600 sm:text-xl">
-                    Generate beautiful, customizable QR codes with real-time scan analytics.
-                    Dynamic links let you update destinations anytime &mdash; even after printing.
+                <p class="mt-6 text-lg text-gray-600 sm:text-xl dark:text-gray-400">
+                    {{ __('landing.hero.subtitle') }}
                 </p>
                 <div class="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-                    <a href="{{ route('register') }}" class="inline-flex items-center rounded-xl bg-primary-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-primary-600/25 hover:bg-primary-700 transition">
-                        Start Creating Free
+                    <a href="{{ route('register') }}" class="inline-flex items-center rounded-xl bg-primary-600 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-primary-600/25 transition hover:bg-primary-700">
+                        {{ __('landing.hero.cta_primary') }}
                         <svg class="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
                     </a>
-                    <a href="#features" class="inline-flex items-center rounded-xl border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-700 hover:bg-gray-50 transition">Learn More</a>
+                    <a href="#features" class="inline-flex items-center rounded-xl border border-gray-300 bg-white px-8 py-3.5 text-base font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-gray-300 dark:hover:bg-zinc-800">{{ __('landing.hero.cta_secondary') }}</a>
                 </div>
-                <p class="mt-4 text-sm text-gray-500">No credit card required. 3 static QR codes + 1 dynamic QR free.</p>
+                <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('landing.hero.footnote') }}</p>
             </div>
         </div>
     </section>
@@ -65,27 +69,21 @@
     <section id="features" class="py-20 sm:py-28">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="mx-auto max-w-2xl text-center">
-                <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl">Everything You Need for QR Codes</h2>
-                <p class="mt-4 text-lg text-gray-600">Powerful tools to create, customize, and track your QR codes.</p>
+                <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl dark:text-gray-100">{{ __('landing.features.title') }}</h2>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">{{ __('landing.features.subtitle') }}</p>
             </div>
             <div class="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
                 @php
-                $features = [
-                    ['title' => 'Dynamic QR Codes', 'desc' => 'Change the destination URL anytime without reprinting. Perfect for marketing campaigns.', 'icon' => 'link'],
-                    ['title' => 'Real-Time Analytics', 'desc' => 'Track scans, locations, devices, and more. Get insights to optimize your campaigns.', 'icon' => 'chart-bar'],
-                    ['title' => 'Custom Designs', 'desc' => 'Brand your QR codes with custom colors, logos, and dot styles to match your identity.', 'icon' => 'squares-2x2'],
-                    ['title' => 'Multiple QR Types', 'desc' => 'URLs, vCards, WiFi, email, phone, SMS, and more. One platform for all your QR needs.', 'icon' => 'qr-code'],
-                    ['title' => 'Link Management', 'desc' => 'Password protection, expiration dates, and scan limits for total control over your links.', 'icon' => 'shield-check'],
-                    ['title' => 'Team Collaboration', 'desc' => 'Invite team members, share QR codes, and manage permissions across your organization.', 'icon' => 'cog-6-tooth'],
-                ];
+                $featureKeys = ['dynamic', 'analytics', 'designs', 'types', 'links', 'teams'];
+                $featureIcons = ['link', 'chart-bar', 'squares-2x2', 'qr-code', 'shield-check', 'cog-6-tooth'];
                 @endphp
-                @foreach($features as $feature)
-                    <div class="group rounded-2xl border border-gray-200 p-8 transition hover:border-primary-200 hover:shadow-lg">
-                        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-100 text-primary-600 transition group-hover:bg-primary-600 group-hover:text-white">
-                            <x-icon :name="$feature['icon']" class="h-6 w-6" />
+                @foreach($featureKeys as $index => $key)
+                    <div class="group rounded-2xl border border-gray-200 p-8 transition hover:border-primary-200 hover:shadow-lg dark:border-zinc-800 dark:hover:border-primary-800 dark:hover:shadow-black/20">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-100 text-primary-600 transition group-hover:bg-primary-600 group-hover:text-white dark:bg-primary-950 dark:text-primary-400 dark:group-hover:bg-primary-600 dark:group-hover:text-white">
+                            <x-icon :name="$featureIcons[$index]" class="h-6 w-6" />
                         </div>
-                        <h3 class="mt-6 text-lg font-semibold text-gray-900">{{ $feature['title'] }}</h3>
-                        <p class="mt-2 text-sm text-gray-600">{{ $feature['desc'] }}</p>
+                        <h3 class="mt-6 text-lg font-semibold text-gray-900 dark:text-gray-100">{{ __('landing.features.items.'.$key.'.title') }}</h3>
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ __('landing.features.items.'.$key.'.desc') }}</p>
                     </div>
                 @endforeach
             </div>
@@ -93,93 +91,88 @@
     </section>
 
     {{-- Pricing --}}
-    <section id="pricing" class="bg-gray-50 py-20 sm:py-28">
+    <section id="pricing" class="bg-gray-50 py-20 sm:py-28 dark:bg-zinc-900/50">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="mx-auto max-w-2xl text-center">
-                <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl">Simple, Transparent Pricing</h2>
-                <p class="mt-4 text-lg text-gray-600">Start free and scale as you grow. No hidden fees.</p>
+                <h2 class="text-3xl font-bold text-gray-900 sm:text-4xl dark:text-gray-100">{{ __('landing.pricing.title') }}</h2>
+                <p class="mt-4 text-lg text-gray-600 dark:text-gray-400">{{ __('landing.pricing.subtitle') }}</p>
             </div>
 
             <div x-data="{ yearly: false }" class="mt-10">
                 <div class="flex items-center justify-center gap-3">
-                    <span class="text-sm font-medium" :class="!yearly ? 'text-gray-900' : 'text-gray-500'">Monthly</span>
+                    <span class="text-sm font-medium" :class="!yearly ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'">{{ __('landing.pricing.monthly') }}</span>
                     <button @click="yearly = !yearly" type="button" role="switch"
                             class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors"
-                            :class="yearly ? 'bg-primary-600' : 'bg-gray-200'">
+                            :class="yearly ? 'bg-primary-600' : 'bg-gray-200 dark:bg-zinc-700'">
                         <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition" :class="yearly ? 'translate-x-5' : 'translate-x-0'"></span>
                     </button>
-                    <span class="text-sm font-medium" :class="yearly ? 'text-gray-900' : 'text-gray-500'">
-                        Yearly <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">2 months free</span>
+                    <span class="text-sm font-medium" :class="yearly ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'">
+                        {{ __('landing.pricing.yearly') }} <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-400">{{ __('landing.pricing.yearly_badge') }}</span>
                     </span>
                 </div>
 
-                <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                     @php
-                    $tiers = \App\Enums\PlanTier::cases();
-                    $maintenanceCost = config('qrcode.credits.dynamic_qr_maintenance', 5);
                     $plans = [
-                        ['tier' => $tiers[0], 'monthly' => 0, 'yearly_total' => 0, 'credits' => 5, 'static_limit' => 3, 'popular' => false],
-                        ['tier' => $tiers[1], 'monthly' => 5, 'yearly_total' => 50, 'credits' => 50, 'static_limit' => 10, 'popular' => false],
-                        ['tier' => $tiers[2], 'monthly' => 15, 'yearly_total' => 150, 'credits' => 200, 'static_limit' => 50, 'popular' => true],
-                        ['tier' => $tiers[3], 'monthly' => 50, 'yearly_total' => 500, 'credits' => null, 'static_limit' => null, 'popular' => false],
+                        ['tier' => \App\Enums\PlanTier::Starter, 'monthly' => 0, 'yearly_total' => 0, 'static_limit' => 5, 'dynamic_limit' => 1, 'popular' => false],
+                        ['tier' => \App\Enums\PlanTier::Pro, 'monthly' => 10, 'yearly_total' => 99, 'static_limit' => null, 'dynamic_limit' => 10, 'popular' => true],
+                        ['tier' => \App\Enums\PlanTier::Enterprise, 'monthly' => 39, 'yearly_total' => 389, 'static_limit' => null, 'dynamic_limit' => null, 'popular' => false],
                     ];
                     @endphp
                     @foreach($plans as $plan)
-                        <div class="relative rounded-2xl bg-white p-8 shadow-sm ring-1 {{ ($plan['popular'] ?? false) ? 'ring-primary-600 ring-2' : 'ring-gray-200' }}">
+                        <div class="relative rounded-2xl bg-white p-8 shadow-sm ring-1 dark:bg-zinc-900 {{ ($plan['popular'] ?? false) ? 'ring-primary-600 ring-2 dark:ring-primary-500' : 'ring-gray-200 dark:ring-zinc-800' }}">
                             @if($plan['popular'] ?? false)
-                                <div class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary-600 px-4 py-1 text-xs font-semibold text-white">Most Popular</div>
+                                <div class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary-600 px-4 py-1 text-xs font-semibold text-white">{{ __('landing.pricing.most_popular') }}</div>
                             @endif
-                            <h3 class="text-xl font-bold text-gray-900">{{ $plan['tier']->label() }}</h3>
+                            <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">{{ $plan['tier']->label() }}</h3>
                             <div class="mt-4">
                                 @if($plan['monthly'] === 0)
-                                    <span class="text-4xl font-bold text-gray-900">Free</span>
+                                    <span class="text-4xl font-bold text-gray-900 dark:text-gray-100">{{ __('landing.pricing.free') }}</span>
                                 @else
-                                    <span x-show="!yearly" class="text-4xl font-bold text-gray-900">€{{ $plan['monthly'] }}</span>
-                                    <span x-show="yearly" x-cloak class="text-4xl font-bold text-gray-900">€{{ $plan['yearly_total'] }}</span>
-                                    <span class="text-sm text-gray-500" x-text="yearly ? '/year' : '/month'">/month</span>
+                                    <span x-show="!yearly" class="text-4xl font-bold text-gray-900 dark:text-gray-100">€{{ $plan['monthly'] }}</span>
+                                    <span x-show="yearly" x-cloak class="text-4xl font-bold text-gray-900 dark:text-gray-100">€{{ $plan['yearly_total'] }}</span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400" x-text="yearly ? '{{ __('landing.pricing.per_year') }}' : '{{ __('landing.pricing.per_month') }}'">{{ __('landing.pricing.per_month') }}</span>
                                 @endif
                             </div>
                             @if($plan['monthly'] > 0)
-                                <p x-show="yearly" x-cloak class="mt-1 text-xs text-green-600 font-medium">
-                                    €{{ number_format($plan['yearly_total'] / 12, 2) }}/mo &middot; Save €{{ ($plan['monthly'] * 12) - $plan['yearly_total'] }}/year
+                                <p x-show="yearly" x-cloak class="mt-1 text-xs font-medium text-green-600 dark:text-green-400">
+                                    {{ __('landing.pricing.yearly_savings', ['monthly' => number_format($plan['yearly_total'] / 12, 2), 'savings' => ($plan['monthly'] * 12) - $plan['yearly_total']]) }}
                                 </p>
                             @endif
                             <div class="mt-3 space-y-1">
-                                <p class="flex items-center gap-1.5 text-sm text-gray-600">
-                                    <i class="fa-solid fa-coins text-amber-500 w-4 text-center text-xs"></i>
-                                    @if($plan['credits'] === null)
-                                        <span class="font-semibold text-gray-900">Unlimited</span> credits
+                                <p class="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
+                                    <i class="fa-solid fa-qrcode w-4 text-center text-xs text-gray-400"></i>
+                                    @if($plan['static_limit'] === null)
+                                        {{ __('landing.pricing.static_unlimited') }}
                                     @else
-                                        {{ $plan['credits'] }} credits/month
+                                        {{ __('landing.pricing.static_limit', ['count' => $plan['static_limit']]) }}
                                     @endif
                                 </p>
-                                <p class="flex items-center gap-1.5 text-sm text-gray-600">
-                                    <i class="fa-solid fa-qrcode text-gray-400 w-4 text-center text-xs"></i>
-                                    {{ $plan['static_limit'] === null ? 'Unlimited' : $plan['static_limit'] }} static QR codes
-                                </p>
-                                <p class="flex items-center gap-1.5 text-sm text-gray-600">
-                                    <i class="fa-solid fa-arrows-rotate text-emerald-500 w-4 text-center text-xs"></i>
-                                    @if($plan['credits'] === null)
-                                        <span class="font-semibold text-gray-900">Unlimited</span> dynamic QR codes
+                                <p class="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-400">
+                                    <i class="fa-solid fa-arrows-rotate w-4 text-center text-xs text-emerald-500"></i>
+                                    @if($plan['dynamic_limit'] === null)
+                                        {{ __('landing.pricing.dynamic_unlimited') }}
                                     @else
-                                        Up to <span class="font-semibold text-gray-900">{{ intdiv($plan['credits'], $maintenanceCost) }}</span> dynamic QR codes
+                                        {{ __('landing.pricing.dynamic_limit', ['count' => $plan['dynamic_limit']]) }}
                                     @endif
                                 </p>
-                                @if($plan['credits'] !== null)
-                                    <p class="text-xs text-gray-400 pl-5.5">{{ $maintenanceCost }} credits/month each &middot; buy more anytime</p>
+                                @if($plan['tier'] === \App\Enums\PlanTier::Enterprise)
+                                    <p class="pl-5.5 text-xs text-gray-400">{{ __('landing.pricing.edits_included') }}</p>
+                                @else
+                                    <p class="pl-5.5 text-xs text-gray-400">{{ __('landing.pricing.paid_edits_note') }}</p>
                                 @endif
                             </div>
-                            <ul class="mt-5 space-y-2.5 border-t pt-5">
+                            <ul class="mt-5 space-y-2.5 border-t border-gray-200 pt-5 dark:border-zinc-800">
                                 @foreach($plan['tier']->featureSummary() as $featureLabel)
-                                    <li class="flex items-center gap-2 text-sm text-gray-600">
+                                    <li class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                                         <svg class="h-4 w-4 shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                                         {{ $featureLabel }}
                                     </li>
                                 @endforeach
                             </ul>
                             <a href="{{ route('register') }}"
-                               class="mt-8 block w-full rounded-xl {{ ($plan['popular'] ?? false) ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-gray-300 text-gray-700 hover:bg-gray-50' }} px-4 py-3 text-center text-sm font-semibold transition">
-                                {{ $plan['monthly'] === 0 ? 'Get Started Free' : 'Get Started' }}
+                               class="mt-8 block w-full rounded-xl px-4 py-3 text-center text-sm font-semibold transition {{ ($plan['popular'] ?? false) ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-zinc-700 dark:text-gray-300 dark:hover:bg-zinc-800' }}">
+                                {{ $plan['monthly'] === 0 ? __('landing.pricing.cta_free') : __('landing.pricing.cta_paid') }}
                             </a>
                         </div>
                     @endforeach
@@ -191,26 +184,19 @@
     {{-- FAQ --}}
     <section id="faq" class="py-20 sm:py-28">
         <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-            <h2 class="text-center text-3xl font-bold text-gray-900 sm:text-4xl">Frequently Asked Questions</h2>
+            <h2 class="text-center text-3xl font-bold text-gray-900 sm:text-4xl dark:text-gray-100">{{ __('landing.faq.title') }}</h2>
             <div class="mt-12 space-y-4" x-data="{ open: null }">
                 @php
-                $faqs = [
-                    ['q' => 'What is a dynamic QR code?', 'a' => 'A dynamic QR code redirects through our servers, allowing you to change the destination URL anytime without reprinting the code. It also enables scan tracking and analytics.'],
-                    ['q' => 'What are credits and how do they work?', 'a' => 'Credits are used for maintaining dynamic QR codes (5 credits/month each), editing them (5 credits per edit), and premium features like vector downloads, API access, and analytics export. Each plan includes a monthly credit allowance that resets every billing cycle. You can also purchase additional credit packs anytime.'],
-                    ['q' => 'Can I change the URL after printing my QR code?', 'a' => 'Yes! Dynamic QR codes let you change the destination URL as many times as you want, even after the code has been printed on physical materials.'],
-                    ['q' => 'What analytics do you provide?', 'a' => 'We track total scans, unique scans, geographic locations, device types, operating systems, browsers, referrers, and provide time-series charts to visualize trends.'],
-                    ['q' => 'Do you offer custom domains?', 'a' => 'Yes, Pro and Enterprise plans support custom domains for your short links. Instead of go.oursite.com, your QR codes can redirect through your own branded domain.'],
-                    ['q' => 'Can I cancel my subscription anytime?', 'a' => 'Absolutely. You can cancel anytime and will retain access until the end of your billing period. Your QR codes will continue to work, but dynamic features will be limited to the free tier.'],
-                ];
+                $faqKeys = ['dynamic', 'paid_edits', 'url_change', 'analytics', 'domains', 'cancel'];
                 @endphp
-                @foreach($faqs as $i => $faq)
-                    <div class="rounded-xl border border-gray-200">
+                @foreach($faqKeys as $i => $key)
+                    <div class="rounded-xl border border-gray-200 dark:border-zinc-800">
                         <button @click="open = open === {{ $i }} ? null : {{ $i }}" class="flex w-full items-center justify-between px-6 py-4 text-left">
-                            <span class="text-sm font-semibold text-gray-900">{{ $faq['q'] }}</span>
-                            <svg class="h-5 w-5 shrink-0 text-gray-500 transition" :class="open === {{ $i }} ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            <span class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('landing.faq.items.'.$key.'.q') }}</span>
+                            <svg class="h-5 w-5 shrink-0 text-gray-500 transition dark:text-gray-400" :class="open === {{ $i }} ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                         </button>
                         <div x-show="open === {{ $i }}" x-collapse class="px-6 pb-4">
-                            <p class="text-sm text-gray-600">{{ $faq['a'] }}</p>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">{{ __('landing.faq.items.'.$key.'.a') }}</p>
                         </div>
                     </div>
                 @endforeach
@@ -219,12 +205,12 @@
     </section>
 
     {{-- CTA --}}
-    <section class="bg-primary-600 py-16">
+    <section class="bg-primary-600 py-16 dark:bg-primary-700">
         <div class="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-            <h2 class="text-3xl font-bold text-white sm:text-4xl">Ready to Create Your First QR Code?</h2>
-            <p class="mt-4 text-lg text-primary-100">Join thousands of businesses using our platform. Start free today.</p>
-            <a href="{{ route('register') }}" class="mt-8 inline-flex items-center rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-primary-600 shadow-lg hover:bg-gray-50 transition">
-                Get Started Free
+            <h2 class="text-3xl font-bold text-white sm:text-4xl">{{ __('landing.cta.title') }}</h2>
+            <p class="mt-4 text-lg text-primary-100">{{ __('landing.cta.subtitle') }}</p>
+            <a href="{{ route('register') }}" class="mt-8 inline-flex items-center rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-primary-600 shadow-lg transition hover:bg-gray-50">
+                {{ __('landing.cta.button') }}
                 <svg class="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
             </a>
         </div>
@@ -233,43 +219,43 @@
     <x-cookie-consent />
 
     {{-- Footer --}}
-    <footer class="border-t bg-gray-50 py-12">
+    <footer class="border-t border-gray-200 bg-gray-50 py-12 dark:border-zinc-800 dark:bg-zinc-900">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div class="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                    <a href="/" class="flex items-center gap-2 text-lg font-bold text-primary-600">
+                    <a href="/" class="flex items-center gap-2 text-lg font-bold text-primary-600 dark:text-primary-400">
                         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5z"/></svg>
                         {{ config('app.name') }}
                     </a>
-                    <p class="mt-3 text-sm text-gray-500">Create beautiful, trackable QR codes for your business.</p>
+                    <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ __('landing.footer.tagline') }}</p>
                 </div>
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-900">Product</h4>
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('landing.footer.product') }}</h4>
                     <ul class="mt-3 space-y-2">
-                        <li><a href="#features" class="text-sm text-gray-500 hover:text-gray-900">Features</a></li>
-                        <li><a href="#pricing" class="text-sm text-gray-500 hover:text-gray-900">Pricing</a></li>
-                        <li><a href="#faq" class="text-sm text-gray-500 hover:text-gray-900">FAQ</a></li>
+                        <li><a href="#features" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.features') }}</a></li>
+                        <li><a href="#pricing" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.pricing') }}</a></li>
+                        <li><a href="#faq" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.nav.faq') }}</a></li>
                     </ul>
                 </div>
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-900">Legal</h4>
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('landing.footer.legal') }}</h4>
                     <ul class="mt-3 space-y-2">
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Privacy Policy</a></li>
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Terms of Service</a></li>
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Cookie Policy</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.privacy') }}</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.terms') }}</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.cookies') }}</a></li>
                     </ul>
                 </div>
                 <div>
-                    <h4 class="text-sm font-semibold text-gray-900">Support</h4>
+                    <h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">{{ __('landing.footer.support') }}</h4>
                     <ul class="mt-3 space-y-2">
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Help Center</a></li>
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Contact Us</a></li>
-                        <li><a href="#" class="text-sm text-gray-500 hover:text-gray-900">Status</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.help') }}</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.contact') }}</a></li>
+                        <li><a href="#" class="text-sm text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">{{ __('landing.footer.status') }}</a></li>
                     </ul>
                 </div>
             </div>
-            <div class="mt-8 border-t pt-8 text-center text-sm text-gray-400">
-                &copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+            <div class="mt-8 border-t border-gray-200 pt-8 text-center text-sm text-gray-400 dark:border-zinc-800">
+                &copy; {{ date('Y') }} {{ config('app.name') }}. {{ __('landing.footer.copyright') }}
             </div>
         </div>
     </footer>

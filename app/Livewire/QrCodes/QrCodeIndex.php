@@ -2,6 +2,7 @@
 
 namespace App\Livewire\QrCodes;
 
+use App\Enums\Feature;
 use App\Models\QrCode;
 use App\Services\QrCodeGeneratorService;
 use Livewire\Component;
@@ -51,18 +52,16 @@ class QrCodeIndex extends Component
     public function downloadSvg(int $id): mixed
     {
         $user = auth()->user();
-        $creditService = app(\App\Services\CreditService::class);
 
-        if (! $creditService->canAfford($user, \App\Enums\CreditAction::SvgDownload)) {
-            session()->flash('error', 'Insufficient credits for SVG download.');
+        if (! $user->hasFeature(Feature::ExportSvg)) {
+            session()->flash('error', __('qr.svg_not_available'));
+
             return null;
         }
 
         $qr = $user->qrCodes()->with('design', 'shortLink')->findOrFail($id);
         $generator = app(QrCodeGeneratorService::class);
         $svg = $generator->generateSvg($qr);
-
-        $creditService->deduct($user, \App\Enums\CreditAction::SvgDownload, description: "SVG download: {$qr->name}");
 
         return response()->streamDownload(function () use ($svg) {
             echo $svg;

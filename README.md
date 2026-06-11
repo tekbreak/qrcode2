@@ -1,6 +1,8 @@
-# QR Code SaaS Platform
+# dynQR
 
-A full-featured SaaS platform for creating, managing, and tracking QR codes. Built with Laravel 12, Livewire 4, Alpine.js, and Tailwind CSS 4.
+A full-featured SaaS platform for creating, managing, and tracking dynamic QR codes. Built with Laravel 12, Livewire 4, Alpine.js, and Tailwind CSS 4.
+
+**Website:** [dynqr.com](https://dynqr.com)
 
 ---
 
@@ -13,7 +15,7 @@ A full-featured SaaS platform for creating, managing, and tracking QR codes. Bui
 - [Local Development Setup](#local-development-setup)
 - [Demo Accounts](#demo-accounts)
 - [QR Code Types](#qr-code-types)
-- [Credit System](#credit-system)
+- [Pricing Model](#pricing-model)
 - [Subscription Plans](#subscription-plans)
 - [Link Proxy & Analytics](#link-proxy--analytics)
 - [REST API](#rest-api)
@@ -31,8 +33,8 @@ A full-featured SaaS platform for creating, managing, and tracking QR codes. Bui
 - **Dynamic links** — Proxy all QR scans through your domain for tracking and real-time destination changes
 - **Advanced customization** — Colors, gradients, dot/eye shapes, logo upload or built-in icon picker (Font Awesome Regular SVGs), frames with CTA text, design templates, SVG/EPS export
 - **Analytics dashboard** — Scan counts, unique visitors, geo-location (GeoIP), device/OS/browser breakdown, referrer tracking, time-series charts
-- **Credit-based billing** — Freemium model with monthly credit allowances and purchasable credit packs
-- **Stripe subscriptions** — 4 tiers (Free, Starter, Pro, Enterprise) with monthly/yearly billing via Laravel Cashier
+- **Subscription billing** — Three tiers (Starter, Pro, Enterprise) with feature gating via Laravel Cashier
+- **Pay-per-action** — €1 one-time Stripe payments for dynamic QR edits on Starter and Pro plans
 - **Team collaboration** — Invite members, shared QR codes, role-based access (Owner / Admin / Member)
 - **REST API** — Full CRUD for QR codes and analytics (Sanctum-authenticated)
 - **Bulk generation** — Upload a CSV to generate hundreds of QR codes at once via background jobs
@@ -77,8 +79,8 @@ A full-featured SaaS platform for creating, managing, and tracking QR codes. Bui
 
 ```bash
 # 1. Clone the repository
-git clone <repository-url> qrcode_app
-cd qrcode_app
+git clone <repository-url> dynqr
+cd dynqr
 
 # 2. Install PHP dependencies
 composer install
@@ -90,7 +92,7 @@ php artisan key:generate
 # 4. Configure your .env file (see Environment Variables section below)
 
 # 5. Create the database
-mysql -u root -e "CREATE DATABASE qrcode_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -e "CREATE DATABASE dynqr CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
 # 6. Run migrations and seed demo data
 php artisan migrate --seed
@@ -116,11 +118,11 @@ Add to your Apache configuration (e.g., `httpd-vhosts.conf`):
 
 ```apache
 <VirtualHost *:81>
-    ServerName qrcode.local
-    ServerAlias go.qrcode.local
-    DocumentRoot /path/to/qrcode_app/public
+    ServerName dynqr.local
+    ServerAlias go.dynqr.local
+    DocumentRoot /path/to/dynqr/public
 
-    <Directory /path/to/qrcode_app/public>
+    <Directory /path/to/dynqr/public>
         AllowOverride All
         Require all granted
     </Directory>
@@ -132,8 +134,8 @@ Add to your Apache configuration (e.g., `httpd-vhosts.conf`):
 Add to `/etc/hosts`:
 
 ```
-127.0.0.1  qrcode.local
-127.0.0.1  go.qrcode.local
+127.0.0.1  dynqr.local
+127.0.0.1  go.dynqr.local
 ```
 
 ### Running the Dev Server
@@ -164,7 +166,7 @@ After running `php artisan migrate --seed`, the following accounts are available
 | Email    | `admin@example.com`  |
 | Password | `password`           |
 | Role     | Administrator        |
-| Credits  | 5 (Free plan)        |
+| Plan     | Starter (free)       |
 
 The admin account has access to the **Admin Panel** at `/admin`.
 
@@ -175,9 +177,20 @@ The admin account has access to the **Admin Panel** at `/admin`.
 | Email    | `test@example.com`   |
 | Password | `password`           |
 | Role     | Standard user        |
-| Credits  | 5 (Free plan)        |
+| Plan     | Starter (free)       |
 
-> Both accounts use `password` as the default password (set by Laravel's `UserFactory`).
+### Demo User Account
+
+| Field    | Value                |
+|----------|----------------------|
+| Email    | `demo@example.com`   |
+| Password | `password`           |
+| Role     | Standard user        |
+| Plan     | Starter (free)       |
+
+> All mock accounts use `password` as the default password. Re-seed anytime with `php artisan db:seed --class=MockUserSeeder`.
+
+> On local (`APP_ENV=local`), the login page shows one-click buttons for each mock account.
 
 ---
 
@@ -200,124 +213,85 @@ The admin account has access to the **Admin Panel** at `/admin`.
 | PDF / File        | `pdf`        | Yes     | Share a downloadable file                             |
 | Restaurant Menu   | `menu`       | Yes     | Digital restaurant menu                               |
 
-**Dynamic** types (marked "Yes") include scan tracking, analytics, password protection, expiration, and more. Each active dynamic QR code costs **5 credits/month** for maintenance (hosting the redirect, tracking scans). Any edit — changing URL, uploading a new file, updating content — costs an additional **5 credits per edit**. Non-dynamic types are always static and cannot be edited after creation.
+**Dynamic** types (marked "Yes") include scan tracking, analytics, password protection, expiration, and more. Creating your first dynamic QR is included in your plan quota. Subsequent edits to URL, password, expiration, or scan limits cost **€1 per action** on Starter and Pro (Enterprise includes unlimited edits).
 
 ---
 
-## Credit System
+## Pricing Model
 
-### Pricing Model: Scenario A (recommended)
+The platform uses a **subscription + pay-per-action** model:
 
-**Why this model works:**
-- **Clean numbers**: 5 / 50 / 200 / 1,000 credits are easy to understand
-- **~€0.10 per credit** at Starter is simple math for users
-- **Volume discount**: Starter = €0.10/credit, Pro = €0.075/credit (25% cheaper), Enterprise = €0.05/credit (50% cheaper)
-- **Free tier is meaningful**: 1 dynamic QR maintained for free, but edits require an upgrade — a natural conversion trigger
-- **Balanced upgrade pressure**: generous enough to demonstrate value, strict enough to drive paid conversions
+- **Subscriptions** define capacity (static/dynamic QR limits) and feature access (downloads, API, bulk, teams, etc.)
+- **€1 one-time payments** apply to dynamic QR mutations after the initial activation (Starter & Pro only)
+- **No credits, no credit packs, no monthly resets**
 
-### Credit Costs
+### €1 Paid Actions (Starter & Pro)
 
-| Action                                   | Credits | EUR value (Starter) |
-|------------------------------------------|---------|---------------------|
-| Dynamic QR maintenance (per QR/month)    | 5       | €0.50               |
-| Edit dynamic QR (per edit)               | 5       | €0.50               |
-| Premium customization                    | 2       | €0.20               |
-| SVG download                             | 1       | €0.10               |
-| EPS download                             | 3       | €0.30               |
-| Bulk generation (per QR)                 | 3       | €0.30               |
-| API call                                 | 5       | €0.50               |
-| Analytics export                         | 5       | €0.50               |
-| Scans (per 1,000)                        | 1       | €0.10               |
+| Action | Price |
+|--------|-------|
+| Edit dynamic QR destination URL | €1 |
+| Enable / change password protection | €1 |
+| Set or extend expiration date | €1 |
+| Update max scan limit | €1 |
+| Re-activate an expired or paused dynamic QR | €1 |
 
-### How it works
+Enterprise users are not charged for these actions.
 
-1. **All QR codes start static** — creating any QR code is free (within the static QR limit of your plan).
-2. **Converting to dynamic** — when a user edits a dynamic-capable QR code for the first time, it becomes dynamic. The monthly maintenance cost (5 credits/month) is prorated from the conversion date to the end of the billing cycle.
-3. **Monthly maintenance** — each active dynamic QR code costs 5 credits/month, charged at the start of each billing cycle. This covers hosting the redirect link, scan tracking, and analytics.
-4. **Editing** — each edit to a dynamic QR code (changing URL, uploading a new file, updating menu, etc.) costs 5 credits on top of the maintenance fee.
-5. **Credits reset monthly** based on the user's subscription plan.
-6. **Credit packs** — users on any non-Enterprise plan can buy additional credits as one-time purchases. Purchased credits stack on top of the monthly allowance and never expire (they persist across billing resets).
-7. **Enterprise is unlimited** — Enterprise users bypass the credit system entirely. All actions (dynamic QR maintenance, edits, downloads, API calls, exports) are included at no additional cost. Transactions are still logged for audit purposes.
-
-### Credit Packs (One-Time Purchase)
-
-| Pack        | Credits | Price | EUR/credit |
-|-------------|---------|-------|------------|
-| 10 credits  | 10      | €2    | €0.20      |
-| 50 credits  | 50      | €8    | €0.16      |
-| 150 credits | 150     | €20   | €0.13      |
-| 500 credits | 500     | €50   | €0.10      |
-
-Credit packs are available on the Billing page. When Stripe is configured, they use Stripe Checkout for secure one-time payments. In development mode (no Stripe price ID), credits are added directly for testing.
-
-Configure Stripe price IDs in `.env`:
+Configure the Stripe price ID in `.env`:
 
 ```env
-STRIPE_CREDIT_PACK_10_PRICE_ID=price_xxx
-STRIPE_CREDIT_PACK_50_PRICE_ID=price_xxx
-STRIPE_CREDIT_PACK_150_PRICE_ID=price_xxx
-STRIPE_CREDIT_PACK_500_PRICE_ID=price_xxx
+STRIPE_PAID_ACTION_PRICE_ID=price_xxx
 ```
 
-### Real-World Usage Examples
-
-**Free user (5 credits/month):**
-- 3 static QR codes (free) + 1 dynamic QR maintained (5 credits) = uses full allowance, no edits possible without upgrading
-
-**Starter user (50 credits/month, €5/mo):**
-- 5 dynamic QRs maintained (25 credits) + 3 edits (15 credits) + 2 SVG downloads (2 credits) = 42 credits
-- 8 dynamic QRs maintained (40 credits) + 1 edit (5 credits) + 1 analytics export (5 credits) = 50 credits
-
-**Pro user (200 credits/month, €15/mo):**
-- 20 dynamic QRs maintained (100 credits) + 10 edits (50 credits) + 10 SVG downloads (10 credits) = 160 credits
-
-**Enterprise user (€50/mo):**
-- Unlimited static and dynamic QR codes, unlimited edits, all features included — no credit tracking
+Paid actions are handled by `PaidActionService` → Stripe Checkout → `PaidActionController` success callback.
 
 ---
 
 ## Subscription Plans
 
-| Feature               | Free       | Starter          | Pro              | Enterprise         |
-|-----------------------|------------|------------------|------------------|--------------------|
-| Monthly price         | €0         | €5               | €15              | €50                |
-| Yearly price          | €0         | €50 (€4.17/mo)   | €150 (€12.50/mo) | €500 (€41.67/mo)   |
-| Monthly credits       | 5          | 50               | 200              | **Unlimited**      |
-| Static QR codes       | 3          | 10               | 50               | Unlimited          |
-| Dynamic QR codes      | Up to 1    | Up to 10         | Up to 40         | **Unlimited**      |
-| Customization         | Basic      | Basic            | Full             | Full               |
-| Download formats      | PNG        | PNG, JPG         | All formats      | All formats        |
-| Analytics             | Basic      | **Advanced**     | Advanced         | Advanced           |
-| Custom domains        | No         | No               | Yes              | Yes                |
-| API access            | No         | No               | Yes              | Yes                |
-| Bulk operations       | No         | No               | No               | Yes                |
-| Teams                 | No         | No               | No               | Yes                |
-| Priority support      | No         | No               | No               | Yes                |
-| EUR/credit            | —          | €0.10            | €0.075           | N/A (unlimited)    |
+| Feature               | Starter    | Pro              | Enterprise         |
+|-----------------------|------------|------------------|--------------------|
+| Monthly price         | €0         | €10              | €39                |
+| Yearly price          | €0         | €99 (~17% off)   | €389 (~17% off)    |
+| Static QR codes       | 5          | Unlimited        | Unlimited          |
+| Dynamic QR codes      | 1          | 10               | Unlimited          |
+| Dynamic QR edits      | €1 each    | €1 each          | **Included**       |
+| Customization         | Basic      | Full             | Full               |
+| Download formats      | PNG        | PNG, JPG, SVG, EPS | All formats      |
+| Analytics             | Basic (30d)| Advanced (1yr)   | Advanced (unlimited)|
+| Analytics export      | No         | Yes              | Yes                |
+| API access            | No         | Yes (1k/mo)      | Unlimited          |
+| Bulk operations       | No         | Yes (500/mo)     | Unlimited          |
+| Custom domains        | No         | No               | Yes                |
+| Teams                 | No         | No               | Yes (10 members)   |
+| Priority support      | No         | No               | Yes                |
 
-Features are defined in the `App\Enums\Feature` enum and assigned to tiers in `App\Enums\PlanTier::features()`. To check if a user has access to a feature:
+Features are defined in `App\Enums\Feature` and assigned to tiers in `App\Enums\PlanTier::features()`. Feature gating is enforced via `$user->hasFeature()`:
 
 ```php
 // In controllers/services
-$user->hasFeature(Feature::AdvancedAnalytics);  // true for Starter, Pro, Enterprise
-$user->hasFeature(Feature::ExportEps);          // true for Pro, Enterprise only
-$user->hasFeature(Feature::BulkOperations);     // true for Enterprise only
+$user->hasFeature(Feature::AdvancedAnalytics);  // true for Pro, Enterprise
+$user->hasFeature(Feature::ExportSvg);          // true for Pro, Enterprise
+$user->hasFeature(Feature::BulkOperations);    // true for Pro, Enterprise
+$user->hasFeature(Feature::Teams);              // true for Enterprise only
 
 // In Blade templates
-@if(auth()->user()->hasFeature(\App\Enums\Feature::AdvancedAnalytics))
-    {{-- show advanced analytics UI --}}
+@if(auth()->user()->hasFeature(\App\Enums\Feature::ExportSvg))
+    {{-- show SVG download button --}}
 @endif
 ```
+
+Plan configuration lives in `config/qrcode.php` and is seeded via `PlanSeeder`.
 
 ---
 
 ## Link Proxy & Analytics
 
-All QR codes start as static. When a user edits a dynamic-capable QR code (URL, Social, App Store, PDF, Menu), it is upgraded to dynamic and a short link is created. The first conversion prorates the 5 credits/month maintenance fee, and each edit (including the first) costs 5 credits.
+All QR codes start as static. When a user edits a dynamic-capable QR code (URL, Social, App Store, PDF, Menu), it is upgraded to dynamic and a short link is created. The first activation is free within plan limits. Subsequent edits trigger a €1 Stripe payment (except on Enterprise).
 
-Dynamic QR codes are served through a proxy domain (default: `go.qrcode.local:81`). When a user scans a dynamic QR code:
+Dynamic QR codes are served through a proxy domain (default: `go.dynqr.local:81`). When a user scans a dynamic QR code:
 
-1. The scanner's browser hits `http://go.qrcode.local:81/{slug}`
+1. The scanner's browser hits `http://go.dynqr.local:81/{slug}`
 2. `RedirectController` resolves the short link (with Redis caching in production)
 3. A `RecordScanJob` is dispatched to the queue to asynchronously record:
    - IP address and geo-location (GeoIP)
@@ -342,7 +316,7 @@ Dynamic QR codes are served through a proxy domain (default: `go.qrcode.local:81
 
 The API is authenticated via **Laravel Sanctum** (Bearer token). Generate tokens from the Settings page.
 
-Base URL: `http://qrcode.local:81/api`
+Base URL: `http://dynqr.local:81/api`
 
 ### Endpoints
 
@@ -360,7 +334,7 @@ Base URL: `http://qrcode.local:81/api`
 ### Example: Create a QR Code
 
 ```bash
-curl -X POST http://qrcode.local:81/api/qr-codes \
+curl -X POST http://dynqr.local:81/api/qr-codes \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -379,7 +353,6 @@ curl -X POST http://qrcode.local:81/api/qr-codes \
 |-----------------------------------|------------------------------------------------------|
 | `php artisan migrate --seed`      | Run all migrations and seed demo data                |
 | `php artisan analytics:aggregate` | Aggregate raw scan data into hourly summaries        |
-| `php artisan credits:reset`       | Reset monthly credit allowances for all users        |
 | `php artisan queue:work`          | Start the queue worker for background jobs           |
 
 ### Scheduled Tasks
@@ -387,12 +360,11 @@ curl -X POST http://qrcode.local:81/api/qr-codes \
 Add the Laravel scheduler to your system crontab:
 
 ```
-* * * * * cd /path/to/qrcode_app && php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /path/to/dynqr && php artisan schedule:run >> /dev/null 2>&1
 ```
 
 The scheduler handles:
 - **Every 15 minutes**: `analytics:aggregate` — Compresses raw scan data into the `scan_aggregates` table
-- **Hourly**: `credits:reset` — Checks each user's `resets_at` timestamp and refills credit balances when the monthly reset date has passed
 
 ---
 
@@ -421,6 +393,8 @@ The scheduler handles:
 | `/analytics`                | Analytics overview          |
 | `/analytics/{qrCode}`       | Detailed analytics per code |
 | `/billing`                  | Subscription management     |
+| `/paid-actions/{id}/success`| Paid action checkout success|
+| `/paid-actions/{id}/cancel` | Paid action checkout cancel |
 | `/settings`                 | User settings & API tokens  |
 
 ### Admin (requires `is_admin = true`)
@@ -435,8 +409,8 @@ The scheduler handles:
 
 ```
 app/
-├── Console/Commands/        # Artisan commands (AggregateAnalytics, ResetCredits)
-├── Enums/                   # QrCodeType, PlanTier, CreditAction
+├── Console/Commands/        # Artisan commands (AggregateAnalytics)
+├── Enums/                   # QrCodeType, PlanTier, Feature, PaidActionType
 ├── Http/
 │   ├── Controllers/
 │   │   ├── Api/             # REST API (QrCodeApiController, AnalyticsApiController)
@@ -454,10 +428,9 @@ app/
 │   ├── Teams/               # TeamManager
 │   └── Dashboard.php
 ├── Models/                  # User, QrCode, QrDesign, ShortLink, Scan,
-│                            # ScanAggregate, Plan, CreditBalance,
-│                            # CreditTransaction, Team, CustomDomain
-└── Services/                # CreditService, QrCodeGeneratorService,
-                             # AnalyticsService
+│                            # ScanAggregate, Plan, PaidAction, Team, CustomDomain
+└── Services/                # PaidActionService, SubscriptionService,
+                             # QrCodeGeneratorService, AnalyticsService
 ```
 
 ---
@@ -468,12 +441,13 @@ Key variables to configure in your `.env` file:
 
 | Variable               | Description                          | Example                     |
 |------------------------|--------------------------------------|-----------------------------|
-| `APP_URL`              | Application base URL                 | `http://qrcode.local:81`   |
+| `APP_NAME`             | Application display name               | `dynQR`                     |
+| `APP_URL`              | Application base URL                 | `http://dynqr.local:81`    |
 | `DB_CONNECTION`        | Database driver                      | `mysql`                     |
-| `DB_DATABASE`          | Database name                        | `qrcode_app`               |
-| `DB_USERNAME`          | Database user                        | `qrcode_app`               |
-| `DB_PASSWORD`          | Database password                    | `qrcode_app`               |
-| `PROXY_DOMAIN`         | Domain for dynamic QR short links    | `go.qrcode.local:81`       |
+| `DB_DATABASE`          | Database name                        | `dynqr`                     |
+| `DB_USERNAME`          | Database user                        | `dynqr`                     |
+| `DB_PASSWORD`          | Database password                    | *(your password)*           |
+| `PROXY_DOMAIN`         | Domain for dynamic QR short links    | `go.dynqr.local:81`        |
 | `PROXY_SCHEME`         | Scheme for proxy URLs                | `http` or `https`           |
 | `SESSION_DRIVER`       | Session backend                      | `database` or `redis`       |
 | `QUEUE_CONNECTION`     | Queue backend                        | `database` or `redis`       |
@@ -481,6 +455,11 @@ Key variables to configure in your `.env` file:
 | `STRIPE_KEY`           | Stripe publishable key               | `pk_test_...`               |
 | `STRIPE_SECRET`        | Stripe secret key                    | `sk_test_...`               |
 | `STRIPE_WEBHOOK_SECRET`| Stripe webhook signing secret        | `whsec_...`                 |
+| `STRIPE_PRO_MONTHLY_PRICE_ID` | Pro plan monthly price ID     | `price_...`                 |
+| `STRIPE_PRO_YEARLY_PRICE_ID` | Pro plan yearly price ID (€99) | `price_...`                 |
+| `STRIPE_ENTERPRISE_MONTHLY_PRICE_ID` | Enterprise monthly price ID | `price_...`          |
+| `STRIPE_ENTERPRISE_YEARLY_PRICE_ID` | Enterprise yearly price ID  | `price_...`                 |
+| `STRIPE_PAID_ACTION_PRICE_ID` | €1 paid action price ID      | `price_...`                 |
 | `GOOGLE_CLIENT_ID`     | Google OAuth client ID               | `123...apps.google...`      |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret           | `GOCSPX-...`                |
 | `MAIL_HOST`            | SMTP host                            | `in-v3.mailjet.com`         |
@@ -496,23 +475,23 @@ Key variables to configure in your `.env` file:
 3. Set up Redis and point `SESSION_DRIVER`, `QUEUE_CONNECTION`, and `CACHE_STORE` to `redis`
 4. Configure Stripe keys for live billing
 5. Configure Google OAuth credentials with your production callback URL
-6. Set `PROXY_DOMAIN` and `PROXY_SCHEME` to your production short-link domain (e.g., `go.yourdomain.com` with `https`)
+6. Set `PROXY_DOMAIN` and `PROXY_SCHEME` to your production short-link domain (e.g., `go.dynqr.com` with `https`)
 7. Build frontend assets: `npm run build`
 8. Optimize Laravel: `php artisan config:cache && php artisan route:cache && php artisan view:cache`
 9. Set up the scheduler cron: `* * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1`
 10. Start the queue worker with Supervisor:
 
 ```ini
-[program:qrcode-worker]
+[program:dynqr-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /path/to/qrcode_app/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+command=php /path/to/dynqr/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
 autostart=true
 autorestart=true
 stopasgroup=true
 killasgroup=true
 numprocs=2
 redirect_stderr=true
-stdout_logfile=/path/to/qrcode_app/storage/logs/worker.log
+stdout_logfile=/path/to/dynqr/storage/logs/worker.log
 ```
 
 ---

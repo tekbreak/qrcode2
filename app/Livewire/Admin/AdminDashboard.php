@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Admin;
 
-use App\Models\CreditTransaction;
 use App\Models\Plan;
 use App\Models\QrCode;
 use App\Models\Scan;
@@ -35,8 +34,6 @@ class AdminDashboard extends Component
         if ($user->id === auth()->id()) return;
 
         $user->qrCodes()->delete();
-        $user->creditBalance?->delete();
-        $user->creditTransactions()->delete();
         $user->delete();
 
         session()->flash('status', "User {$user->email} deleted.");
@@ -53,8 +50,7 @@ class AdminDashboard extends Component
             'subscribers' => User::whereHas('subscriptions', fn($q) => $q->where('stripe_status', 'active'))->count(),
         ];
 
-        $usersQuery = User::with('creditBalance')
-            ->withCount('qrCodes')
+        $usersQuery = User::withCount('qrCodes')
             ->latest();
 
         if ($this->userSearch) {

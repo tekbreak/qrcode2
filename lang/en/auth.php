@@ -37,4 +37,6 @@ return [
     'magic_link_button' => 'Sign In Now',
     'magic_link_expiry' => 'This link will expire in 15 minutes.',
     'magic_link_ignore' => 'If you did not request this, you can safely ignore this email.',
+    'dev_login_title' => 'Local development',
+    'dev_login_subtitle' => 'One-click sign in with seeded mock accounts.',
 ];

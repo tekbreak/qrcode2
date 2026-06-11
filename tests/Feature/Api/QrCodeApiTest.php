@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Api;
 
-use App\Enums\CreditAction;
 use App\Enums\PlanTier;
 use App\Enums\QrCodeType;
 use App\Models\QrCode;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -15,15 +15,33 @@ class QrCodeApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->seed(\Database\Seeders\PlanSeeder::class);
+    }
+
     public function test_qr_codes_index_requires_authentication(): void
     {
         $this->getJson('/api/qr-codes')
             ->assertUnauthorized();
     }
 
-    public function test_authenticated_user_can_list_own_qr_codes(): void
+    public function test_api_access_requires_pro_plan(): void
     {
         $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/qr-codes')
+            ->assertForbidden()
+            ->assertJsonPath('error', 'API access is not available on your plan.');
+    }
+
+    public function test_authenticated_pro_user_can_list_own_qr_codes(): void
+    {
+        $user = User::factory()->create();
+        app(SubscriptionService::class)->subscribe($user, 'pro', false);
         QrCode::factory()->count(2)->create(['user_id' => $user->id]);
         QrCode::factory()->create();
 
@@ -37,7 +55,9 @@ class QrCodeApiTest extends TestCase
     public function test_user_cannot_view_another_users_qr_code(): void
     {
         $owner = User::factory()->create();
+        app(SubscriptionService::class)->subscribe($owner, 'pro', false);
         $other = User::factory()->create();
+        app(SubscriptionService::class)->subscribe($other, 'pro', false);
         $qrCode = QrCode::factory()->create(['user_id' => $owner->id]);
 
         Sanctum::actingAs($other);
@@ -46,13 +66,11 @@ class QrCodeApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_store_creates_qr_code_and_deducts_api_credits(): void
+    public function test_store_creates_qr_code_for_pro_user(): void
     {
         $user = User::factory()->create();
-        $user->createCreditBalance(PlanTier::Starter);
+        app(SubscriptionService::class)->subscribe($user, 'pro', false);
         Sanctum::actingAs($user);
-
-        $startingBalance = $user->creditBalance->balance;
 
         $response = $this->postJson('/api/qr-codes', [
             'name' => 'API QR',
@@ -68,29 +86,24 @@ class QrCodeApiTest extends TestCase
             'user_id' => $user->id,
             'name' => 'API QR',
         ]);
-
-        $this->assertSame(
-            $startingBalance - CreditAction::ApiCall->cost(),
-            $user->fresh()->creditBalance->balance
-        );
     }
 
-    public function test_store_returns_403_when_plan_limit_reached(): void
+    public function test_store_returns_403_when_dynamic_plan_limit_reached(): void
     {
         $user = User::factory()->create();
-        $user->createCreditBalance(PlanTier::Free);
-        QrCode::factory()->count(3)->create([
+        app(SubscriptionService::class)->subscribe($user, 'pro', false);
+        QrCode::factory()->count(10)->create([
             'user_id' => $user->id,
-            'is_dynamic' => false,
+            'is_dynamic' => true,
         ]);
 
         Sanctum::actingAs($user);
 
         $this->postJson('/api/qr-codes', [
             'name' => 'Over limit',
-            'type' => QrCodeType::Text->value,
-            'is_dynamic' => false,
-            'content_data' => ['text' => 'hello'],
+            'type' => QrCodeType::Url->value,
+            'is_dynamic' => true,
+            'content_data' => ['url' => 'https://example.com'],
         ])->assertForbidden()
             ->assertJsonPath('error', 'Plan QR code limit reached.');
     }
@@ -98,6 +111,7 @@ class QrCodeApiTest extends TestCase
     public function test_destroy_deletes_own_qr_code(): void
     {
         $user = User::factory()->create();
+        app(SubscriptionService::class)->subscribe($user, 'pro', false);
         $qrCode = QrCode::factory()->create(['user_id' => $user->id]);
 
         Sanctum::actingAs($user);

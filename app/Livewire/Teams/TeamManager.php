@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Teams;
 
+use App\Enums\Feature;
 use App\Models\Team;
 use App\Models\User;
 use Livewire\Component;
@@ -14,6 +15,10 @@ class TeamManager extends Component
 
     public function mount()
     {
+        if (! auth()->user()->hasFeature(Feature::Teams)) {
+            abort(403, __('qr.teams_not_available'));
+        }
+
         $this->team = auth()->user()->currentTeam();
         if ($this->team) {
             $this->teamName = $this->team->name;

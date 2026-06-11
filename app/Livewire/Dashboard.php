@@ -15,7 +15,6 @@ class Dashboard extends Component
         return view('livewire.dashboard', [
             'stats' => $analytics->getUserStats($user->id),
             'topQrCodes' => $analytics->getTopQrCodes($user->id),
-            'creditBalance' => $user->creditBalance,
         ])->layout('layouts.app', ['title' => __('nav.dashboard')]);
     }
 }

@@ -11,6 +11,7 @@ class SetLocale
     public function handle(Request $request, Closure $next): Response
     {
         $locale = $request->user()?->locale
+            ?? $request->session()->get('locale')
             ?? $request->cookie('locale')
             ?? $request->getPreferredLanguage(['en', 'es'])
             ?? 'en';

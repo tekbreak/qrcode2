@@ -2,11 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Enums\CreditAction;
 use App\Models\QrCode;
 use App\Models\ShortLink;
 use App\Models\User;
-use App\Services\CreditService;
 use App\Services\QrCodeGeneratorService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,19 +28,15 @@ class BulkGenerateQrCodesJob implements ShouldQueue
     public function handle(): void
     {
         $user = User::findOrFail($this->userId);
-        $creditService = app(CreditService::class);
         $generator = app(QrCodeGeneratorService::class);
 
         $batchDir = 'bulk/' . now()->format('Y-m-d') . '/' . uniqid();
         Storage::disk('public')->makeDirectory($batchDir);
 
         foreach ($this->items as $item) {
-            $creditCost = CreditAction::BulkGeneration->cost();
-            if ($item['is_dynamic'] ?? false) {
-                $creditCost += CreditAction::EditDynamicQr->cost();
-            }
+            $isDynamic = $item['is_dynamic'] ?? true;
 
-            if (! $creditService->canAfford($user, CreditAction::BulkGeneration, $creditCost)) {
+            if (! $user->canCreateQrCode(isDynamic: $isDynamic)) {
                 break;
             }
 
@@ -51,7 +45,7 @@ class BulkGenerateQrCodesJob implements ShouldQueue
                 'team_id' => $user->current_team_id,
                 'name' => $item['name'],
                 'type' => $item['type'] ?? 'url',
-                'is_dynamic' => $item['is_dynamic'] ?? true,
+                'is_dynamic' => $isDynamic,
                 'content_data' => $item['content_data'],
             ]);
 
@@ -73,8 +67,6 @@ class BulkGenerateQrCodesJob implements ShouldQueue
             $png = $generator->generatePng($qrCode, 800);
             $filename = str($item['name'])->slug() . '.png';
             Storage::disk('public')->put("{$batchDir}/{$filename}", $png);
-
-            $creditService->deduct($user, CreditAction::BulkGeneration, $creditCost, "Bulk: {$item['name']}");
         }
     }
 }

@@ -37,4 +37,6 @@ return [
     'magic_link_button' => 'Iniciar sesión ahora',
     'magic_link_expiry' => 'Este enlace expirará en 15 minutos.',
     'magic_link_ignore' => 'Si no solicitaste esto, puedes ignorar este correo.',
+    'dev_login_title' => 'Desarrollo local',
+    'dev_login_subtitle' => 'Inicio de sesión rápido con cuentas de prueba.',
 ];

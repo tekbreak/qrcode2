@@ -29,8 +29,6 @@ class Register extends Component
             'password' => Hash::make($validated['password']),
         ]);
 
-        $user->createCreditBalance();
-
         event(new Registered($user));
 
         Auth::login($user);

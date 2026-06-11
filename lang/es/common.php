@@ -27,4 +27,11 @@ return [
     'results' => 'resultados',
     'no_results' => 'No se encontraron resultados.',
     'per_page' => 'Por página',
+    'theme' => 'Tema',
+    'theme_light' => 'Claro',
+    'theme_dark' => 'Oscuro',
+    'theme_system' => 'Sistema',
+    'language' => 'Idioma',
+    'language_en' => 'English',
+    'language_es' => 'Español',
 ];

@@ -15,7 +15,6 @@ class Plan extends Model
         'price_yearly',
         'stripe_monthly_price_id',
         'stripe_yearly_price_id',
-        'monthly_credits',
         'max_static_qr',
         'max_dynamic_qr',
         'features',
