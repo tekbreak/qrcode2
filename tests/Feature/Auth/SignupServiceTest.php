@@ -31,7 +31,7 @@ class SignupServiceTest extends TestCase
 
         $result = app(SignupService::class)->completeSignup('starter');
 
-        $this->assertNull($result['redirect']);
+        $this->assertSame(route('dashboard', ['welcome' => 1]), $result['redirect']->getTargetUrl());
         $this->assertSame('jane@example.com', $result['user']->email);
     }
 }

@@ -58,7 +58,10 @@ class SignupService
         if ($planSlug === 'starter') {
             $this->clearPendingSignup();
 
-            return ['user' => $user, 'redirect' => null];
+            return [
+                'user' => $user,
+                'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
+            ];
         }
 
         $result = app(SubscriptionService::class)->subscribe(
@@ -76,7 +79,9 @@ class SignupService
 
         return [
             'user' => $user,
-            'redirect' => $result instanceof RedirectResponse ? $result : null,
+            'redirect' => $result instanceof RedirectResponse
+                ? $result
+                : redirect()->route('dashboard', ['welcome' => 1]),
         ];
     }
 
@@ -90,12 +95,10 @@ class SignupService
             ]);
         }
 
-        if (User::where('email', $pending['email'])->exists()) {
-            $this->clearPendingSignup();
+        $existingUser = User::where('email', $pending['email'])->first();
 
-            throw ValidationException::withMessages([
-                'plan' => __('auth.account_already_exists'),
-            ]);
+        if ($existingUser) {
+            return $existingUser;
         }
 
         $attributes = [

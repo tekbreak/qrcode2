@@ -51,7 +51,7 @@ class SignupPlanSelectionTest extends TestCase
         Livewire::test(ChoosePlan::class)
             ->call('selectPlan', 'starter')
             ->assertHasNoErrors()
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
         $this->assertDatabaseHas('users', ['email' => 'jane@example.com']);
         $this->assertAuthenticatedAs(User::where('email', 'jane@example.com')->first());
@@ -72,7 +72,7 @@ class SignupPlanSelectionTest extends TestCase
         Livewire::test(ChoosePlan::class)
             ->call('selectPlan', 'pro')
             ->assertHasNoErrors()
-            ->assertRedirect(route('dashboard'));
+            ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
         $user = User::where('email', 'jane@example.com')->first();
 
@@ -94,6 +94,42 @@ class SignupPlanSelectionTest extends TestCase
         app(\App\Services\SubscriptionService::class)->subscribe($user, 'pro', false);
 
         $this->actingAs($user->fresh())
+            ->get(route('auth.choose-plan'))
+            ->assertRedirect(route('dashboard'));
+    }
+
+    public function test_choose_plan_retries_after_user_was_created_on_failed_attempt(): void
+    {
+        User::factory()->create([
+            'name' => 'Jane Doe',
+            'email' => 'jane@example.com',
+        ]);
+
+        $this->withSession([
+            SignupService::SESSION_KEY => [
+                'type' => 'email',
+                'name' => 'Jane Doe',
+                'email' => 'jane@example.com',
+                'password' => 'password123',
+            ],
+        ]);
+
+        Livewire::test(ChoosePlan::class)
+            ->call('selectPlan', 'pro')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('dashboard', ['welcome' => 1]));
+
+        $user = User::where('email', 'jane@example.com')->first();
+
+        $this->assertTrue($user->subscribed('default'));
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_authenticated_starter_is_redirected_away_from_plan_selector(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
             ->get(route('auth.choose-plan'))
             ->assertRedirect(route('dashboard'));
     }

@@ -34,7 +34,7 @@ class SubscriptionService
 
         if ($subscription && $subscription->valid()) {
             if ($subscription->stripe_price === $priceId) {
-                throw new \RuntimeException('You are already on this plan.');
+                return 'already_subscribed';
             }
 
             if ($this->usesStripeCheckout($priceId)) {

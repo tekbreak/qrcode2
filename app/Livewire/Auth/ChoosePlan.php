@@ -16,12 +16,16 @@ class ChoosePlan extends Component
 
     public function mount(): void
     {
-        if (Auth::check() && Auth::user()->subscribed()) {
-            $this->redirect(route('dashboard'), navigate: true);
+        $signup = app(SignupService::class);
+
+        if (Auth::check() && ! $signup->hasPendingSignup()) {
+            $this->redirectRoute('dashboard', navigate: true);
+
+            return;
         }
 
-        if (! Auth::check() && ! app(SignupService::class)->hasPendingSignup()) {
-            $this->redirect(route('register'), navigate: true);
+        if (! Auth::check() && ! $signup->hasPendingSignup()) {
+            $this->redirectRoute('register', navigate: true);
         }
     }
 
@@ -42,11 +46,7 @@ class ChoosePlan extends Component
 
             session()->regenerate();
 
-            if ($result['redirect']) {
-                return $this->redirect($result['redirect']->getTargetUrl(), navigate: false);
-            }
-
-            return redirect()->route('dashboard');
+            return $this->redirect($result['redirect']->getTargetUrl(), navigate: $this->shouldNavigateTo($result['redirect']->getTargetUrl()));
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -55,6 +55,14 @@ class ChoosePlan extends Component
                 ? $e->getMessage()
                 : __('auth.plan_selection_failed');
         }
+    }
+
+    protected function shouldNavigateTo(string $url): bool
+    {
+        $appHost = parse_url((string) config('app.url'), PHP_URL_HOST);
+        $targetHost = parse_url($url, PHP_URL_HOST);
+
+        return $appHost && $targetHost && strcasecmp($appHost, $targetHost) === 0;
     }
 
     public function render()
