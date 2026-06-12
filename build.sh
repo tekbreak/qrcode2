@@ -9,15 +9,29 @@ if [[ "${1:-}" == "--production" ]]; then
   PRODUCTION=true
 fi
 
+# Avoid requiring DB/Redis during deploy; log to stderr if storage/logs isn't writable yet.
+artisan_clear() {
+  CACHE_STORE=file LOG_CHANNEL=stderr php artisan "$@"
+}
+
+echo "==> Ensuring storage and cache directories exist and are writable..."
+mkdir -p \
+  storage/logs \
+  storage/framework/cache/data \
+  storage/framework/sessions \
+  storage/framework/views \
+  bootstrap/cache
+chmod -R ug+rwx storage bootstrap/cache 2>/dev/null || true
+
 echo "==> Installing PHP dependencies..."
 composer install --no-interaction --prefer-dist --optimize-autoloader
 
 echo "==> Clearing Laravel caches..."
-php artisan config:clear --ansi
-php artisan route:clear --ansi
-php artisan view:clear --ansi
-php artisan cache:clear --ansi
-php artisan optimize:clear --ansi
+artisan_clear config:clear --ansi
+artisan_clear route:clear --ansi
+artisan_clear view:clear --ansi
+artisan_clear cache:clear --ansi
+artisan_clear optimize:clear --ansi
 
 echo "==> Rebuilding frontend assets..."
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
