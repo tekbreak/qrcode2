@@ -190,7 +190,7 @@ The admin account has access to the **Admin Panel** at `/admin`.
 
 > All mock accounts use `password` as the default password. Re-seed anytime with `php artisan db:seed --class=MockUserSeeder`.
 
-> On local (`APP_ENV=local`), the login page shows one-click buttons for each mock account.
+> On local, set `APP_DEV_QUICK_LOGIN=true` in `.env` to show one-click buttons for each mock account on the login page.
 
 ---
 

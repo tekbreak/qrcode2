@@ -14,6 +14,11 @@ return [
     |
     */
 
+    'mailflash' => [
+        'url' => env('MAILFLASH_URL', 'https://mailflash.es'),
+        'key' => env('MAILFLASH_API_KEY'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

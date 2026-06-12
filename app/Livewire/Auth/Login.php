@@ -35,7 +35,7 @@ class Login extends Component
 
     public function quickLogin(string $email)
     {
-        if (! app()->environment('local')) {
+        if (! config('app.dev_quick_login')) {
             abort(403);
         }
 
@@ -54,7 +54,7 @@ class Login extends Component
     public function render()
     {
         return view('livewire.auth.login', [
-            'mockAccounts' => app()->environment('local') ? MockUserSeeder::accounts() : [],
+            'mockAccounts' => config('app.dev_quick_login') ? MockUserSeeder::accounts() : [],
         ])->layout('layouts.guest', ['title' => __('auth.login')]);
     }
 }

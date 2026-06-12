@@ -43,6 +43,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dev Quick Login
+    |--------------------------------------------------------------------------
+    |
+    | Enables one-click mock account buttons on the login page. Must be
+    | explicitly enabled; defaults to false so it never appears in production.
+    |
+    */
+
+    'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------
     |

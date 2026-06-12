@@ -47,6 +47,8 @@ return [
         ],
     ],
 
+    'signup_trial_days' => 30,
+
     'slug_length' => 7,
     'logo_max_size' => 2048,
     'logo_max_dimension' => 500,

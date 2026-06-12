@@ -39,4 +39,14 @@ return [
     'magic_link_ignore' => 'Si no solicitaste esto, puedes ignorar este correo.',
     'dev_login_title' => 'Desarrollo local',
     'dev_login_subtitle' => 'Inicio de sesión rápido con cuentas de prueba.',
+
+    'choose_plan' => 'Elige tu plan',
+    'choose_plan_subtitle' => 'Selecciona un plan para terminar de crear tu cuenta. El primer mes es gratis en cualquier plan.',
+    'trial_badge' => ':days días de prueba gratis en todos los planes',
+    'trial_then_price' => 'Gratis durante :days días, luego se factura según el precio indicado',
+    'select_plan' => 'Empezar con :plan',
+    'plan_selection_required' => 'Completa el registro seleccionando un plan.',
+    'plan_selection_failed' => 'No se pudo completar el registro. Inténtalo de nuevo.',
+    'account_already_exists' => 'Ya existe una cuenta con este correo. Inicia sesión en su lugar.',
+    'checkout_cancelled' => 'El pago fue cancelado. Elige un plan para continuar o selecciona Starter para empezar gratis.',
 ];

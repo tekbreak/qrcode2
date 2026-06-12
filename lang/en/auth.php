@@ -39,4 +39,14 @@ return [
     'magic_link_ignore' => 'If you did not request this, you can safely ignore this email.',
     'dev_login_title' => 'Local development',
     'dev_login_subtitle' => 'One-click sign in with seeded mock accounts.',
+
+    'choose_plan' => 'Choose your plan',
+    'choose_plan_subtitle' => 'Select a plan to finish creating your account. Your first month is free on any plan.',
+    'trial_badge' => ':days-day free trial on every plan',
+    'trial_then_price' => 'Free for :days days, then billed as shown',
+    'select_plan' => 'Start with :plan',
+    'plan_selection_required' => 'Please complete sign up by selecting a plan.',
+    'plan_selection_failed' => 'Unable to complete sign up. Please try again.',
+    'account_already_exists' => 'An account with this email already exists. Please sign in instead.',
+    'checkout_cancelled' => 'Checkout was cancelled. Choose a plan below to continue, or pick Starter to get started for free.',
 ];

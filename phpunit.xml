@@ -32,5 +32,11 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="STRIPE_KEY" value=""/>
+        <env name="STRIPE_SECRET" value=""/>
+        <env name="STRIPE_PRO_MONTHLY_PRICE_ID" value="dev_pro_monthly"/>
+        <env name="STRIPE_PRO_YEARLY_PRICE_ID" value="dev_pro_yearly"/>
+        <env name="STRIPE_ENTERPRISE_MONTHLY_PRICE_ID" value="dev_enterprise_monthly"/>
+        <env name="STRIPE_ENTERPRISE_YEARLY_PRICE_ID" value="dev_enterprise_yearly"/>
     </php>
 </phpunit>

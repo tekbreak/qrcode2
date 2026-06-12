@@ -10,8 +10,13 @@ use Laravel\Cashier\Subscription;
 
 class SubscriptionService
 {
-    public function subscribe(User $user, string $planSlug, bool $yearly = false): RedirectResponse|string
-    {
+    public function subscribe(
+        User $user,
+        string $planSlug,
+        bool $yearly = false,
+        bool $withTrial = false,
+        ?array $checkoutUrls = null,
+    ): RedirectResponse|string {
         $user = $user->fresh();
         $plan = Plan::where('slug', $planSlug)->firstOrFail();
 
@@ -38,21 +43,25 @@ class SubscriptionService
                 return 'swapped';
             }
 
-            $this->applyDevSubscription($user, $plan, $yearly);
+            $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
 
             return 'dev_applied';
         }
 
         if ($this->usesStripeCheckout($priceId)) {
-            return $user->newSubscription('default', $priceId)
-                ->checkout([
-                    'success_url' => route('billing.index').'?success=1',
-                    'cancel_url' => route('billing.index').'?cancelled=1',
-                ])
-                ->redirect();
+            $builder = $user->newSubscription('default', $priceId);
+
+            if ($withTrial) {
+                $builder->trialDays($this->trialDays());
+            }
+
+            return $builder->checkout([
+                'success_url' => $checkoutUrls['success'] ?? route('billing.index').'?success=1',
+                'cancel_url' => $checkoutUrls['cancel'] ?? route('billing.index').'?cancelled=1',
+            ])->redirect();
         }
 
-        $this->applyDevSubscription($user, $plan, $yearly);
+        $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
 
         return 'dev_applied';
     }
@@ -88,7 +97,7 @@ class SubscriptionService
         return filled(config('cashier.secret')) && filled(config('cashier.key'));
     }
 
-    protected function applyDevSubscription(User $user, Plan $plan, bool $yearly): void
+    protected function applyDevSubscription(User $user, Plan $plan, bool $yearly, bool $withTrial = false): void
     {
         $priceId = $this->resolvePriceId($plan, $yearly);
 
@@ -103,7 +112,13 @@ class SubscriptionService
             'stripe_status' => 'active',
             'stripe_price' => $priceId,
             'quantity' => 1,
+            'trial_ends_at' => $withTrial ? now()->addDays($this->trialDays()) : null,
         ]);
+    }
+
+    protected function trialDays(): int
+    {
+        return (int) config('qrcode.signup_trial_days', 30);
     }
 
     protected function defaultSubscription(User $user): ?Subscription

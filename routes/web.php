@@ -6,6 +6,7 @@ use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\PaidActionController;
 use App\Livewire\Admin\AdminDashboard;
 use App\Livewire\Analytics\AnalyticsIndex;
+use App\Livewire\Auth\ChoosePlan;
 use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\Login;
 use App\Livewire\Auth\Register;
@@ -17,6 +18,7 @@ use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Livewire\QrCodes\QrCodeIndex;
 use App\Livewire\Settings\SettingsIndex;
 use App\Livewire\Teams\TeamManager;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Support\Facades\Route;
 
 // Landing page
@@ -39,6 +41,8 @@ Route::middleware('guest')->group(function () {
     Route::post('/auth/magic-link', [MagicLinkController::class, 'send'])->name('auth.magic-link.send');
     Route::get('/auth/magic-link/{user}', [MagicLinkController::class, 'verify'])->name('auth.magic-link.verify');
 });
+
+Route::get('/choose-plan', ChoosePlan::class)->name('auth.choose-plan');
 
 // Authenticated routes
 Route::middleware('auth')->group(function () {
@@ -64,6 +68,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/paid-actions/{paidAction}/cancel', [PaidActionController::class, 'cancel'])->name('paid-actions.cancel');
 
     Route::get('/settings', SettingsIndex::class)->name('settings.index');
+
+    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+        $request->fulfill();
+
+        return redirect()->route('dashboard');
+    })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
 
     Route::get('/teams', TeamManager::class)->name('teams.index');
 

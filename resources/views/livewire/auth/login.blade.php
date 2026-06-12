@@ -25,7 +25,7 @@
         </div>
 
         <div>
-            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('auth.password') }}</label>
+            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('auth.password_label') }}</label>
             <input wire:model="password" id="password" type="password" autocomplete="current-password" required
                    class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
             @error('password') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
