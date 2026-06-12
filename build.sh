@@ -9,15 +9,15 @@ if [[ "${1:-}" == "--production" ]]; then
   PRODUCTION=true
 fi
 
+echo "==> Installing PHP dependencies..."
+composer install --no-interaction --prefer-dist --optimize-autoloader
+
 echo "==> Clearing Laravel caches..."
 php artisan config:clear --ansi
 php artisan route:clear --ansi
 php artisan view:clear --ansi
 php artisan cache:clear --ansi
 php artisan optimize:clear --ansi
-
-echo "==> Installing PHP dependencies..."
-composer install --no-interaction --prefer-dist --optimize-autoloader
 
 echo "==> Rebuilding frontend assets..."
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
