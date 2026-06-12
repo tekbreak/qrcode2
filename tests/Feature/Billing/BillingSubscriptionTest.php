@@ -64,7 +64,7 @@ class BillingSubscriptionTest extends TestCase
         Livewire::actingAs($user)
             ->test(\App\Livewire\Billing\BillingIndex::class)
             ->call('subscribe', 'pro')
-            ->assertSet('errorMessage', 'You are already on this plan.');
+            ->assertSet('successMessage', 'You are already on this plan.');
     }
 
     public function test_plan_seeder_includes_dev_stripe_price_ids(): void

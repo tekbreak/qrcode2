@@ -26,6 +26,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar',
         'locale',
         'is_admin',
+        'selected_plan',
+        'plan_selected_at',
         'current_team_id',
     ];
 
@@ -38,9 +40,19 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
+            'plan_selected_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
         ];
+    }
+
+    public function hasSelectedPlan(): bool
+    {
+        if ($this->plan_selected_at !== null) {
+            return true;
+        }
+
+        return $this->subscribed();
     }
 
     public function teams(): BelongsToMany

@@ -53,9 +53,12 @@ class SignupPlanSelectionTest extends TestCase
             ->assertHasNoErrors()
             ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
-        $this->assertDatabaseHas('users', ['email' => 'jane@example.com']);
-        $this->assertAuthenticatedAs(User::where('email', 'jane@example.com')->first());
-        $this->assertFalse(User::where('email', 'jane@example.com')->first()->subscribed());
+        $user = User::where('email', 'jane@example.com')->first();
+
+        $this->assertNotNull($user->plan_selected_at);
+        $this->assertSame('starter', $user->selected_plan);
+        $this->assertAuthenticatedAs($user);
+        $this->assertFalse($user->subscribed());
     }
 
     public function test_choose_plan_applies_trial_subscription_for_paid_plan_in_dev_mode(): void
@@ -90,7 +93,10 @@ class SignupPlanSelectionTest extends TestCase
 
     public function test_subscribed_user_is_redirected_away_from_plan_selector(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'plan_selected_at' => null,
+            'selected_plan' => null,
+        ]);
         app(\App\Services\SubscriptionService::class)->subscribe($user, 'pro', false);
 
         $this->actingAs($user->fresh())
@@ -125,12 +131,27 @@ class SignupPlanSelectionTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_authenticated_starter_is_redirected_away_from_plan_selector(): void
+    public function test_authenticated_user_without_plan_can_access_plan_selector(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'plan_selected_at' => null,
+            'selected_plan' => null,
+        ]);
 
         $this->actingAs($user)
             ->get(route('auth.choose-plan'))
-            ->assertRedirect(route('dashboard'));
+            ->assertOk();
+    }
+
+    public function test_authenticated_user_without_plan_is_redirected_from_dashboard(): void
+    {
+        $user = User::factory()->create([
+            'plan_selected_at' => null,
+            'selected_plan' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertRedirect(route('auth.choose-plan'));
     }
 }

@@ -47,6 +47,7 @@ return [
     'select_plan' => 'Empezar con :plan',
     'plan_selection_required' => 'Completa el registro seleccionando un plan.',
     'plan_selection_failed' => 'No se pudo completar el registro. Inténtalo de nuevo.',
+    'plan_payment_failed' => 'No se pudo iniciar el pago. Verifica la configuración de Stripe o elige Starter para continuar gratis.',
     'account_already_exists' => 'Ya existe una cuenta con este correo. Inicia sesión en su lugar.',
     'checkout_cancelled' => 'El pago fue cancelado. Elige un plan para continuar o selecciona Starter para empezar gratis.',
 ];

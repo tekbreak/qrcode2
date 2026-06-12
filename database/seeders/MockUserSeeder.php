@@ -58,6 +58,8 @@ class MockUserSeeder extends Seeder
                 'password' => self::PASSWORD,
                 'email_verified_at' => now(),
                 'is_admin' => $account['is_admin'] ?? false,
+                'selected_plan' => 'starter',
+                'plan_selected_at' => now(),
             ]
         );
     }

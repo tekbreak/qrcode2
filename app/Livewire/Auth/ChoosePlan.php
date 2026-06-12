@@ -4,6 +4,7 @@ namespace App\Livewire\Auth;
 
 use App\Models\Plan;
 use App\Services\SignupService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -18,7 +19,7 @@ class ChoosePlan extends Component
     {
         $signup = app(SignupService::class);
 
-        if (Auth::check() && ! $signup->hasPendingSignup()) {
+        if (Auth::check() && Auth::user()->hasSelectedPlan()) {
             $this->redirectRoute('dashboard', navigate: true);
 
             return;
@@ -46,23 +47,38 @@ class ChoosePlan extends Component
 
             session()->regenerate();
 
-            return $this->redirect($result['redirect']->getTargetUrl(), navigate: $this->shouldNavigateTo($result['redirect']->getTargetUrl()));
+            return $this->redirectAfterSignup($result['redirect']);
         } catch (ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
             report($e);
-            $this->errorMessage = $e instanceof \RuntimeException
-                ? $e->getMessage()
-                : __('auth.plan_selection_failed');
+            $this->errorMessage = $this->formatSignupError($e);
         }
     }
 
-    protected function shouldNavigateTo(string $url): bool
+    protected function redirectAfterSignup(RedirectResponse $redirect)
     {
-        $appHost = parse_url((string) config('app.url'), PHP_URL_HOST);
-        $targetHost = parse_url($url, PHP_URL_HOST);
+        $url = $redirect->getTargetUrl();
+        $dashboardPath = parse_url(route('dashboard', ['welcome' => 1]), PHP_URL_PATH) ?: '/dashboard';
 
-        return $appHost && $targetHost && strcasecmp($appHost, $targetHost) === 0;
+        if (parse_url($url, PHP_URL_PATH) === $dashboardPath) {
+            return $this->redirectRoute('dashboard', ['welcome' => 1], navigate: true);
+        }
+
+        return $this->redirect($url, navigate: false);
+    }
+
+    protected function formatSignupError(\Throwable $e): string
+    {
+        if ($e instanceof \RuntimeException) {
+            return $e->getMessage();
+        }
+
+        if (config('app.debug')) {
+            return $e->getMessage();
+        }
+
+        return __('auth.plan_selection_failed');
     }
 
     public function render()

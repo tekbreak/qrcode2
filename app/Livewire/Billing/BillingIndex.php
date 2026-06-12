@@ -50,6 +50,7 @@ class BillingIndex extends Component
             $this->successMessage = match ($result) {
                 'dev_applied' => 'Plan updated successfully (dev mode — no charge).',
                 'swapped' => 'Your plan has been updated.',
+                'already_subscribed' => 'You are already on this plan.',
                 'downgraded' => auth()->user()->subscribed()
                     ? 'Subscription cancelled. You will keep access until the end of your billing period.'
                     : 'You are now on the Starter plan.',

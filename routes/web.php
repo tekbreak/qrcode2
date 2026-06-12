@@ -44,7 +44,7 @@ Route::middleware('guest')->group(function () {
 
 Route::get('/choose-plan', ChoosePlan::class)->name('auth.choose-plan');
 
-// Authenticated routes
+// Authenticated routes (plan selection not required)
 Route::middleware('auth')->group(function () {
     Route::post('/logout', function () {
         auth()->logout();
@@ -53,6 +53,15 @@ Route::middleware('auth')->group(function () {
         return redirect('/');
     })->name('logout');
 
+    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+        $request->fulfill();
+
+        return redirect()->route('dashboard');
+    })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
+});
+
+// Authenticated routes (plan must be selected)
+Route::middleware(['auth', 'plan.selected'])->group(function () {
     Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
     Route::get('/qr-codes', QrCodeIndex::class)->name('qr-codes.index');
@@ -68,12 +77,6 @@ Route::middleware('auth')->group(function () {
     Route::get('/paid-actions/{paidAction}/cancel', [PaidActionController::class, 'cancel'])->name('paid-actions.cancel');
 
     Route::get('/settings', SettingsIndex::class)->name('settings.index');
-
-    Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-        $request->fulfill();
-
-        return redirect()->route('dashboard');
-    })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
 
     Route::get('/teams', TeamManager::class)->name('teams.index');
 

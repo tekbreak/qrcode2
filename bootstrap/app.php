@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
+            'plan.selected' => \App\Http\Middleware\EnsurePlanSelected::class,
             'set-locale' => \App\Http\Middleware\SetLocale::class,
         ]);
 

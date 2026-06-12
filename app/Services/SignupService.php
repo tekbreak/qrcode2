@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Stripe\Exception\ApiErrorException;
 
 class SignupService
 {
@@ -49,40 +49,73 @@ class SignupService
     }
 
     /**
-     * @return array{user: User, redirect: RedirectResponse|null}
+     * @return array{user: User, redirect: RedirectResponse}
      */
     public function completeSignup(string $planSlug, bool $yearly = false, ?User $existingUser = null): array
     {
-        $user = $existingUser ?? $this->createUserFromPendingSignup();
+        $pending = $this->getPendingSignup();
+        $wasNewUser = false;
 
-        if ($planSlug === 'starter') {
-            $this->clearPendingSignup();
-
-            return [
-                'user' => $user,
-                'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
-            ];
+        if ($existingUser) {
+            $user = $existingUser;
+        } else {
+            $user = $this->createUserFromPendingSignup();
+            $wasNewUser = true;
         }
 
-        $result = app(SubscriptionService::class)->subscribe(
-            $user,
-            $planSlug,
-            $yearly,
-            withTrial: true,
-            checkoutUrls: [
-                'success' => route('dashboard', ['welcome' => 1]),
-                'cancel' => route('auth.choose-plan', ['cancelled' => 1]),
-            ],
-        );
+        try {
+            if ($planSlug === 'starter') {
+                $this->markPlanSelected($user, $planSlug);
+                $this->clearPendingSignup();
 
-        $this->clearPendingSignup();
+                $this->finishNewEmailSignup($user, $pending, $wasNewUser);
 
-        return [
-            'user' => $user,
-            'redirect' => $result instanceof RedirectResponse
-                ? $result
-                : redirect()->route('dashboard', ['welcome' => 1]),
-        ];
+                return [
+                    'user' => $user->fresh(),
+                    'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
+                ];
+            }
+
+            $result = app(SubscriptionService::class)->subscribe(
+                $user,
+                $planSlug,
+                $yearly,
+                withTrial: true,
+                checkoutUrls: [
+                    'success' => route('dashboard', ['welcome' => 1]),
+                    'cancel' => route('auth.choose-plan', ['cancelled' => 1]),
+                ],
+            );
+
+            $this->clearPendingSignup();
+
+            if ($result instanceof RedirectResponse) {
+                $this->finishNewEmailSignup($user, $pending, $wasNewUser);
+
+                return [
+                    'user' => $user->fresh(),
+                    'redirect' => $result,
+                ];
+            }
+
+            $this->markPlanSelected($user, $planSlug);
+            $this->finishNewEmailSignup($user, $pending, $wasNewUser);
+
+            return [
+                'user' => $user->fresh(),
+                'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
+            ];
+        } catch (ApiErrorException $e) {
+            throw new \RuntimeException(__('auth.plan_payment_failed'), previous: $e);
+        }
+    }
+
+    public function markPlanSelected(User $user, string $planSlug): void
+    {
+        $user->forceFill([
+            'selected_plan' => $planSlug,
+            'plan_selected_at' => now(),
+        ])->save();
     }
 
     public function createUserFromPendingSignup(): User
@@ -110,17 +143,31 @@ class SignupService
             $attributes['google_id'] = $pending['google_id'];
             $attributes['avatar'] = $pending['avatar'];
             $attributes['email_verified_at'] = now();
-            $attributes['password'] = Hash::make(str()->random(24));
+            $attributes['password'] = str()->random(24);
         } else {
-            $attributes['password'] = Hash::make($pending['password']);
+            $attributes['password'] = $pending['password'];
         }
 
-        $user = User::create($attributes);
+        return User::create($attributes);
+    }
 
-        if ($pending['type'] === 'email') {
-            event(new Registered($user));
+    /**
+     * @param  array<string, mixed>|null  $pending
+     */
+    protected function finishNewEmailSignup(User $user, ?array $pending, bool $wasNewUser): void
+    {
+        if (! $wasNewUser || ($pending['type'] ?? null) !== 'email') {
+            return;
         }
 
-        return $user;
+        dispatch(function () use ($user): void {
+            if ($user->hasVerifiedEmail()) {
+                return;
+            }
+
+            $user->sendEmailVerificationNotification();
+        })->afterResponse();
+
+        event(new Registered($user));
     }
 }

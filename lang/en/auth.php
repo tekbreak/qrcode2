@@ -47,6 +47,7 @@ return [
     'select_plan' => 'Start with :plan',
     'plan_selection_required' => 'Please complete sign up by selecting a plan.',
     'plan_selection_failed' => 'Unable to complete sign up. Please try again.',
+    'plan_payment_failed' => 'Unable to start checkout. Please verify your Stripe configuration or choose Starter to continue for free.',
     'account_already_exists' => 'An account with this email already exists. Please sign in instead.',
     'checkout_cancelled' => 'Checkout was cancelled. Choose a plan below to continue, or pick Starter to get started for free.',
 ];
