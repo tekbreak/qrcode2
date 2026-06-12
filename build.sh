@@ -21,7 +21,8 @@ mkdir -p \
   storage/framework/sessions \
   storage/framework/views \
   bootstrap/cache
-chmod -R ug+rwx storage bootstrap/cache 2>/dev/null || true
+# Only chmod directories; recursive file chmod marks tracked .gitignore files as modified.
+find storage bootstrap/cache -type d -exec chmod ug+rwx {} + 2>/dev/null || true
 
 echo "==> Installing PHP dependencies..."
 composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -46,6 +47,22 @@ if [[ "$PRODUCTION" == true ]]; then
   php artisan config:cache --ansi
   php artisan route:cache --ansi
   php artisan view:cache --ansi
+fi
+
+if command -v git &>/dev/null && git rev-parse --is-inside-work-tree &>/dev/null; then
+  git restore --worktree -- \
+    bootstrap/cache/.gitignore \
+    storage/app/.gitignore \
+    storage/app/private/.gitignore \
+    storage/app/public/.gitignore \
+    storage/framework/.gitignore \
+    storage/framework/cache/.gitignore \
+    storage/framework/cache/data/.gitignore \
+    storage/framework/sessions/.gitignore \
+    storage/framework/testing/.gitignore \
+    storage/framework/views/.gitignore \
+    storage/logs/.gitignore \
+    2>/dev/null || true
 fi
 
 echo "==> Build complete."
