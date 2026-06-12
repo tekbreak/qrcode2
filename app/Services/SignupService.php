@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 use Stripe\Exception\ApiErrorException;
@@ -65,45 +64,36 @@ class SignupService
 
         try {
             if ($planSlug === 'starter') {
-                $this->markPlanSelected($user, $planSlug);
-                $this->clearPendingSignup();
+                $redirect = redirect()->route('dashboard', ['welcome' => 1]);
+            } else {
+                $result = app(SubscriptionService::class)->subscribe(
+                    $user,
+                    $planSlug,
+                    $yearly,
+                    withTrial: true,
+                    checkoutUrls: [
+                        'success' => route('dashboard', ['welcome' => 1]),
+                        'cancel' => route('auth.choose-plan', ['cancelled' => 1]),
+                    ],
+                );
 
-                $this->finishNewEmailSignup($user, $pending, $wasNewUser);
+                if ($result instanceof RedirectResponse) {
+                    $this->finalizeSignup($user, $pending, $wasNewUser, markPlan: false);
 
-                return [
-                    'user' => $user->fresh(),
-                    'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
-                ];
+                    return [
+                        'user' => $user->fresh(),
+                        'redirect' => $result,
+                    ];
+                }
+
+                $redirect = redirect()->route('dashboard', ['welcome' => 1]);
             }
 
-            $result = app(SubscriptionService::class)->subscribe(
-                $user,
-                $planSlug,
-                $yearly,
-                withTrial: true,
-                checkoutUrls: [
-                    'success' => route('dashboard', ['welcome' => 1]),
-                    'cancel' => route('auth.choose-plan', ['cancelled' => 1]),
-                ],
-            );
-
-            $this->clearPendingSignup();
-
-            if ($result instanceof RedirectResponse) {
-                $this->finishNewEmailSignup($user, $pending, $wasNewUser);
-
-                return [
-                    'user' => $user->fresh(),
-                    'redirect' => $result,
-                ];
-            }
-
-            $this->markPlanSelected($user, $planSlug);
-            $this->finishNewEmailSignup($user, $pending, $wasNewUser);
+            $this->finalizeSignup($user, $pending, $wasNewUser, $planSlug);
 
             return [
                 'user' => $user->fresh(),
-                'redirect' => redirect()->route('dashboard', ['welcome' => 1]),
+                'redirect' => $redirect,
             ];
         } catch (ApiErrorException $e) {
             throw new \RuntimeException(__('auth.plan_payment_failed'), previous: $e);
@@ -151,23 +141,42 @@ class SignupService
         return User::create($attributes);
     }
 
+    protected function finalizeSignup(
+        User $user,
+        ?array $pending,
+        bool $wasNewUser,
+        ?string $planSlug = null,
+        bool $markPlan = true,
+    ): void {
+        if ($markPlan && $planSlug !== null) {
+            $this->markPlanSelected($user, $planSlug);
+        }
+
+        $this->clearPendingSignup();
+        $this->queueVerificationEmail($user, $pending, $wasNewUser);
+    }
+
     /**
      * @param  array<string, mixed>|null  $pending
      */
-    protected function finishNewEmailSignup(User $user, ?array $pending, bool $wasNewUser): void
+    protected function queueVerificationEmail(User $user, ?array $pending, bool $wasNewUser): void
     {
         if (! $wasNewUser || ($pending['type'] ?? null) !== 'email') {
             return;
         }
 
         dispatch(function () use ($user): void {
-            if ($user->hasVerifiedEmail()) {
+            $freshUser = $user->fresh();
+
+            if (! $freshUser || $freshUser->hasVerifiedEmail()) {
                 return;
             }
 
-            $user->sendEmailVerificationNotification();
+            try {
+                $freshUser->sendEmailVerificationNotification();
+            } catch (\Throwable $e) {
+                report($e);
+            }
         })->afterResponse();
-
-        event(new Registered($user));
     }
 }

@@ -154,4 +154,26 @@ class SignupPlanSelectionTest extends TestCase
             ->get(route('dashboard'))
             ->assertRedirect(route('auth.choose-plan'));
     }
+
+    public function test_choose_plan_redirects_even_when_verification_mail_fails(): void
+    {
+        $this->partialMock(User::class, function ($mock): void {
+            $mock->shouldReceive('sendEmailVerificationNotification')
+                ->andThrow(new \RuntimeException('MailFlash error'));
+        });
+
+        $this->withSession([
+            SignupService::SESSION_KEY => [
+                'type' => 'email',
+                'name' => 'Jane Doe',
+                'email' => 'jane@example.com',
+                'password' => 'password123',
+            ],
+        ]);
+
+        Livewire::test(ChoosePlan::class)
+            ->call('selectPlan', 'starter')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('dashboard', ['welcome' => 1]));
+    }
 }

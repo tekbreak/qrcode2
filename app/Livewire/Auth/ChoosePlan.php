@@ -20,13 +20,13 @@ class ChoosePlan extends Component
         $signup = app(SignupService::class);
 
         if (Auth::check() && Auth::user()->hasSelectedPlan()) {
-            $this->redirectRoute('dashboard', navigate: true);
+            $this->redirectRoute('dashboard', navigate: false);
 
             return;
         }
 
         if (! Auth::check() && ! $signup->hasPendingSignup()) {
-            $this->redirectRoute('register', navigate: true);
+            $this->redirectRoute('register', navigate: false);
         }
     }
 
@@ -45,8 +45,6 @@ class ChoosePlan extends Component
                 Auth::login($result['user'], remember: true);
             }
 
-            session()->regenerate();
-
             return $this->redirectAfterSignup($result['redirect']);
         } catch (ValidationException $e) {
             throw $e;
@@ -62,7 +60,7 @@ class ChoosePlan extends Component
         $dashboardPath = parse_url(route('dashboard', ['welcome' => 1]), PHP_URL_PATH) ?: '/dashboard';
 
         if (parse_url($url, PHP_URL_PATH) === $dashboardPath) {
-            return $this->redirectRoute('dashboard', ['welcome' => 1], navigate: true);
+            return $this->redirectRoute('dashboard', ['welcome' => 1], navigate: false);
         }
 
         return $this->redirect($url, navigate: false);
