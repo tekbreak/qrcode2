@@ -40,9 +40,10 @@
     <div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         @foreach($plans as $plan)
             @php
-                $price = $yearly && $plan->price_yearly > 0 ? $plan->price_yearly : $plan->price_monthly;
-                $monthlyDisplay = $yearly && $plan->price_yearly > 0 ? $plan->price_yearly / 12 : $plan->price_monthly;
                 $isPopular = $plan->slug === 'pro';
+                $yearlySavings = $plan->price_monthly > 0 && $plan->price_yearly > 0
+                    ? ($plan->price_monthly * 12 - $plan->price_yearly) / 100
+                    : 0;
             @endphp
             <div class="relative flex flex-col rounded-xl bg-white p-6 shadow-sm ring-1 dark:bg-zinc-900 {{ $isPopular ? 'ring-primary-600 ring-2' : 'ring-gray-900/5 dark:ring-zinc-800' }}">
                 @if($isPopular)
@@ -53,15 +54,25 @@
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $plan->description }}</p>
 
                 <div class="mt-4">
-                    @if($price === 0)
+                    @if($plan->price_monthly === 0)
                         <span class="text-3xl font-bold text-gray-900 dark:text-gray-100">{{ __('landing.pricing.free') }}</span>
-                    @else
-                        <span class="text-3xl font-bold text-gray-900 dark:text-gray-100">€{{ number_format($monthlyDisplay / 100, 0) }}</span>
-                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('landing.pricing.per_month') }}</span>
-                        <p class="mt-1 text-xs text-green-600 dark:text-green-400">{{ __('auth.trial_then_price', ['days' => $trialDays]) }}</p>
-                        @if($yearly && $plan->price_yearly > 0)
-                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ __('landing.pricing.yearly_savings', ['monthly' => number_format($plan->price_yearly / 1200, 0), 'savings' => ($plan->price_monthly * 12 - $plan->price_yearly) / 100]) }}</p>
+                    @elseif($yearly && $plan->price_yearly > 0)
+                        <span class="text-3xl font-bold text-gray-900 dark:text-gray-100">€{{ number_format($plan->price_yearly / 100, 0) }}</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('landing.pricing.per_year') }}</span>
+                        <p class="mt-1 text-xs text-green-600 dark:text-green-400">
+                            {{ __('auth.trial_then_yearly_price', ['days' => $trialDays, 'price' => number_format($plan->price_yearly / 100, 0)]) }}
+                        </p>
+                        @if($yearlySavings > 0)
+                            <p class="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                                {{ __('auth.yearly_savings', ['savings' => number_format($yearlySavings, 0)]) }}
+                            </p>
                         @endif
+                    @else
+                        <span class="text-3xl font-bold text-gray-900 dark:text-gray-100">€{{ number_format($plan->price_monthly / 100, 0) }}</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('landing.pricing.per_month') }}</span>
+                        <p class="mt-1 text-xs text-green-600 dark:text-green-400">
+                            {{ __('auth.trial_then_monthly_price', ['days' => $trialDays, 'price' => number_format($plan->price_monthly / 100, 0)]) }}
+                        </p>
                     @endif
                 </div>
 

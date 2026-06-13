@@ -94,7 +94,19 @@ class SubscriptionService
             return false;
         }
 
-        return filled(config('cashier.secret')) && filled(config('cashier.key'));
+        $secret = config('cashier.secret');
+        $key = config('cashier.key');
+
+        if (! filled($secret) || ! filled($key)) {
+            return false;
+        }
+
+        // Stripe secret keys start with sk_; publishable keys (pk_) cannot create checkouts.
+        if (! str_starts_with($secret, 'sk_')) {
+            return false;
+        }
+
+        return true;
     }
 
     protected function applyDevSubscription(User $user, Plan $plan, bool $yearly, bool $withTrial = false): void

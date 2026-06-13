@@ -74,4 +74,24 @@ class BillingSubscriptionTest extends TestCase
         $this->assertSame('dev_pro_monthly', $pro->stripe_monthly_price_id);
         $this->assertSame('dev_pro_yearly', $pro->stripe_yearly_price_id);
     }
+
+    public function test_publishable_key_in_secret_falls_back_to_dev_mode(): void
+    {
+        config([
+            'cashier.key' => 'pk_test_example',
+            'cashier.secret' => 'pk_test_example',
+        ]);
+
+        Plan::where('slug', 'pro')->update([
+            'stripe_monthly_price_id' => 'price_live_example',
+        ]);
+
+        $user = User::factory()->create();
+
+        $result = app(SubscriptionService::class)->subscribe($user, 'pro', false, withTrial: true);
+
+        $this->assertSame('dev_applied', $result);
+        $this->assertTrue($user->fresh()->subscribed('default'));
+        $this->assertNotNull($user->fresh()->subscription()->trial_ends_at);
+    }
 }
