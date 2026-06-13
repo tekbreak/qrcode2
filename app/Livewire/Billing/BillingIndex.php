@@ -83,6 +83,7 @@ class BillingIndex extends Component
             'plans' => $plans,
             'currentTier' => $user->planTier(),
             'isSubscribed' => $user->subscribed(),
+            'canViewInvoices' => filled($user->stripe_id),
         ])->layout('layouts.app', ['title' => __('nav.billing')]);
     }
 }

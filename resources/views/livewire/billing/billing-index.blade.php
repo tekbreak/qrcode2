@@ -30,6 +30,12 @@
                         Dynamic QR edits: €1 per action
                     @endif
                 </p>
+                @if($canViewInvoices)
+                    <button wire:click="manageBilling" type="button"
+                            class="mt-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition">
+                        View invoices & receipts
+                    </button>
+                @endif
             </div>
             @if($isSubscribed)
                 <button wire:click="manageBilling" class="rounded-lg border border-gray-300 dark:border-zinc-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
