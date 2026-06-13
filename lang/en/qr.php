@@ -61,6 +61,8 @@ return [
     'social_dynamic_title' => 'Dynamic QR codes support multiple social profiles.',
     'social_dynamic_help' => ' Add as many networks as you like — when someone scans, they\'ll land on a page with links to all your profiles. With only one network added, the scan goes straight to that profile.',
     'social_hub_badge' => 'Social Hub — visitors will see a landing page',
+    'social_hub_title_label' => 'Profile page title',
+    'social_hub_title_placeholder' => 'e.g. John Doe, Acme Studio',
     'social_direct_badge' => 'Direct link — scans go straight to this profile',
     'social_added_networks' => 'Your social profiles',
     'social_add_network' => 'Add network',
@@ -71,8 +73,6 @@ return [
     'social_static_downgrade_message' => 'Switching to Static will keep only your first network and bake it permanently into the QR image. Continue?',
     'social_static_downgrade_confirm' => 'Yes, switch to Static',
     'social_hub_page_title' => 'Social Links',
-    'social_hub_subtitle' => 'Tap a profile to connect',
-    'social_hub_footer' => 'Powered by QR Code App',
 
     'fg_color' => 'Foreground color',
     'bg_color' => 'Background color',

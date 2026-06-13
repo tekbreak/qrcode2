@@ -61,6 +61,8 @@ return [
     'social_dynamic_title' => 'Los códigos QR dinámicos admiten varios perfiles sociales.',
     'social_dynamic_help' => ' Añade todas las redes que quieras — al escanear, verán una página con enlaces a todos tus perfiles. Con un solo perfil añadido, el escaneo irá directamente a ese perfil.',
     'social_hub_badge' => 'Social Hub — los visitantes verán una página de enlaces',
+    'social_hub_title_label' => 'Título de la página de perfiles',
+    'social_hub_title_placeholder' => 'p. ej. Juan Pérez, Acme Studio',
     'social_direct_badge' => 'Enlace directo — el escaneo va directo a este perfil',
     'social_added_networks' => 'Tus perfiles sociales',
     'social_add_network' => 'Añadir red',
@@ -71,8 +73,6 @@ return [
     'social_static_downgrade_message' => 'Al cambiar a Estático solo se conservará tu primera red y quedará incorporada de forma permanente en el QR. ¿Continuar?',
     'social_static_downgrade_confirm' => 'Sí, cambiar a Estático',
     'social_hub_page_title' => 'Enlaces sociales',
-    'social_hub_subtitle' => 'Toca un perfil para conectar',
-    'social_hub_footer' => 'Powered by QR Code App',
 
     'fg_color' => 'Color de primer plano',
     'bg_color' => 'Color de fondo',

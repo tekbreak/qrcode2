@@ -144,6 +144,7 @@ class MockUserSeeder extends Seeder
                 'type' => QrCodeType::Social,
                 'is_dynamic' => true,
                 'content_data' => [
+                    'hub_title' => 'Acme Demo',
                     'networks' => [
                         ['platform' => 'instagram', 'identifier' => 'acmedemo', 'url' => 'https://instagram.com/acmedemo'],
                         ['platform' => 'x',         'identifier' => 'acmedemo', 'url' => 'https://x.com/acmedemo'],

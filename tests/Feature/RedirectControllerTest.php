@@ -94,6 +94,7 @@ class RedirectControllerTest extends TestCase
             'type' => 'social',
             'is_dynamic' => true,
             'content_data' => [
+                'hub_title' => 'John Doe',
                 'networks' => [
                     [
                         'platform' => 'instagram',
@@ -119,8 +120,11 @@ class RedirectControllerTest extends TestCase
         $this->getRedirect($link->slug)
             ->assertOk()
             ->assertViewIs('redirect.social-hub')
+            ->assertSee('John Doe')
             ->assertSee('Instagram')
-            ->assertSee('TikTok');
+            ->assertSee('TikTok')
+            ->assertDontSee('Tap a profile to connect')
+            ->assertDontSee('Powered by QR Code App');
 
         Queue::assertPushed(RecordScanJob::class);
     }

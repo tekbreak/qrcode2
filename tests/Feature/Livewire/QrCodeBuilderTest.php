@@ -175,6 +175,7 @@ class QrCodeBuilderTest extends TestCase
             ->set('name', 'My Social Hub')
             ->set('type', 'social')
             ->set('isDynamic', true)
+            ->set('socialHubTitle', 'My Profiles')
             ->set('socialNetworks', [
                 [
                     'platform' => 'instagram',
@@ -197,6 +198,7 @@ class QrCodeBuilderTest extends TestCase
 
         $qrCode = QrCode::where('name', 'My Social Hub')->first();
         $this->assertCount(2, $qrCode->content_data['networks']);
+        $this->assertSame('My Profiles', $qrCode->content_data['hub_title']);
     }
 
     public function test_static_social_saves_single_network_only(): void

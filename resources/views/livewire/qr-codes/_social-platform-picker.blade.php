@@ -32,6 +32,23 @@
                 {{ __('qr.social_hub_badge') }}
             </span>
         </div>
+
+        <div>
+            <label for="socialHubTitle" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ __('qr.social_hub_title_label') }}
+            </label>
+            <input
+                id="socialHubTitle"
+                wire:model.live.debounce.500ms="socialHubTitle"
+                type="text"
+                placeholder="{{ __('qr.social_hub_title_placeholder') }}"
+                class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                autocomplete="off"
+            >
+            @error('socialHubTitle')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
     @elseif($showDirectBadge)
         <div class="flex items-center gap-2">
             <span class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-zinc-700 dark:text-gray-300">

@@ -1,0 +1,10 @@
+$TTL 3600
+@	IN SOA dns109.ovh.net. tech.ovh.net. (2081363751 86400 3600 3600000 60)
+        IN NS     dns109.ovh.net.
+        IN NS     ns109.ovh.net.
+        IN A     51.38.33.121
+        IN TXT     "v=spf1 include:mailflash.es ~all"
+_dmarc        IN TXT     "v=DMARC1; p=none; rua=mailto:dmarc@dynqr.es"
+go        IN A     51.38.33.121
+mf1._domainkey        IN TXT     ( "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvZkTeGlxnxBHHBrtvsp+P+4kBQ//R/ocpmRyh774Sea8iuHt34BwXN+Hi6XlrvyiXzekf1Gcy3w6PnP9gMGOgm3+uqBoEzD2E16AOzoXOJIifdv6/vH3IllUZmparq8uSEr7x5k8w8tYjt9/uUoPmrNIQoc0teltwDbC+LATwxknvcNl659STNwpH1zRcHicJ" "Y+REW5fqRxTsUXix17j1OKdzKXpy6kDs5h4KtaH4Jfs3GGQJyoP0+Rc9yRDtG3XlCoTFZAm6GBVFlLeUMjYcdma7gq8gWjBgn5/28lb6Cx2HrY1RpyuocNwzmCfa+SBe8Oijx3D79wAsQZ7ME1vGQIDAQAB" )
+www        IN A     51.38.33.121

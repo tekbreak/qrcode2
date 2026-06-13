@@ -73,6 +73,7 @@ class QrCodeBuilder extends Component
     // Social / AppStore / Menu
     public string $socialUrl = '';
     // Social multi-network
+    public string $socialHubTitle = '';
     public array $socialNetworks = [];
     public string $addingPlatform = '';
     public string $addingIdentifier = '';
@@ -440,6 +441,7 @@ class QrCodeBuilder extends Component
             'cryptoAddress' => $this->cryptoAddress,
             'cryptoAmount' => $this->cryptoAmount,
             'socialUrl' => $truncate($this->socialUrl, 800),
+            'socialHubTitle' => $truncate($this->socialHubTitle, 255),
             'socialNetworks' => $this->socialNetworks,
             'addingPlatform' => $this->addingPlatform,
             'addingIdentifier' => $truncate($this->addingIdentifier, 300),
@@ -513,6 +515,7 @@ class QrCodeBuilder extends Component
             $this->cryptoAddress = $payload['cryptoAddress'] ?? '';
             $this->cryptoAmount = $payload['cryptoAmount'] ?? '';
             $this->socialUrl = $payload['socialUrl'] ?? '';
+            $this->socialHubTitle = $payload['socialHubTitle'] ?? '';
             $this->socialNetworks = $payload['socialNetworks'] ?? [];
             $this->addingPlatform = $payload['addingPlatform'] ?? '';
             $this->addingIdentifier = $payload['addingIdentifier'] ?? '';
@@ -658,6 +661,8 @@ class QrCodeBuilder extends Component
 
     protected function fillSocial(array $d): void
     {
+        $this->socialHubTitle = $d['hub_title'] ?? '';
+
         if (isset($d['networks'])) {
             $this->socialNetworks = $d['networks'];
         } elseif (isset($d['platform'])) {
@@ -733,7 +738,13 @@ class QrCodeBuilder extends Component
     protected function getSocialValidationRules(): array
     {
         if (! empty($this->socialNetworks)) {
-            return ['socialNetworks' => 'required|array|min:1'];
+            $rules = ['socialNetworks' => 'required|array|min:1'];
+
+            if ($this->isDynamic && count($this->socialNetworks) > 1) {
+                $rules['socialHubTitle'] = 'required|string|max:255';
+            }
+
+            return $rules;
         }
 
         return $this->getAddingSocialValidationRules();
@@ -769,9 +780,10 @@ class QrCodeBuilder extends Component
                 'currency' => $this->cryptoCurrency, 'address' => $this->cryptoAddress,
                 'amount' => $this->cryptoAmount,
             ],
-            QrCodeType::Social => [
+            QrCodeType::Social => array_filter([
                 'networks' => $this->getSocialNetworksForSave(),
-            ],
+                'hub_title' => $this->socialHubTitle !== '' ? $this->socialHubTitle : null,
+            ], fn ($value) => $value !== null),
             QrCodeType::AppStore, QrCodeType::Menu => ['url' => $this->socialUrl],
             QrCodeType::Pdf => ['file_url' => $this->existingFileUrl ?? ''],
             default => [],

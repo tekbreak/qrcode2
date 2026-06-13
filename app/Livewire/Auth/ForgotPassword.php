@@ -9,6 +9,8 @@ class ForgotPassword extends Component
 {
     public string $email = '';
 
+    public bool $linkSent = false;
+
     public function sendResetLink()
     {
         $this->validate(['email' => 'required|email']);
@@ -16,7 +18,7 @@ class ForgotPassword extends Component
         $status = Password::sendResetLink(['email' => $this->email]);
 
         if ($status === Password::RESET_LINK_SENT) {
-            session()->flash('status', __($status));
+            $this->linkSent = true;
             $this->reset('email');
         } else {
             $this->addError('email', __($status));

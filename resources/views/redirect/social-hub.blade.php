@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ $qr_name ?: __('qr.social_hub_page_title') }}</title>
+    <title>{{ $hub_title ?: __('qr.social_hub_page_title') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
@@ -14,10 +14,9 @@
                  style="background: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);">
                 <i class="fa-solid fa-share-nodes text-2xl"></i>
             </div>
-            @if($qr_name)
-                <h1 class="text-2xl font-bold text-gray-900">{{ $qr_name }}</h1>
+            @if($hub_title)
+                <h1 class="text-2xl font-bold text-gray-900">{{ $hub_title }}</h1>
             @endif
-            <p class="mt-2 text-sm text-gray-600">{{ __('qr.social_hub_subtitle') }}</p>
         </header>
 
         <main class="flex-1 space-y-3">
@@ -41,10 +40,6 @@
                 </a>
             @endforeach
         </main>
-
-        <footer class="mt-10 pb-4 text-center text-xs text-gray-400">
-            {{ __('qr.social_hub_footer') }}
-        </footer>
     </div>
 </body>
 </html>
