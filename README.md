@@ -479,20 +479,50 @@ Key variables to configure in your `.env` file:
 7. Build frontend assets: `npm run build`
 8. Optimize Laravel: `php artisan config:cache && php artisan route:cache && php artisan view:cache`
 9. Set up the scheduler cron: `* * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1`
-10. Start the queue worker with Supervisor:
+10. Install Supervisor and set up the queue worker as a persistent service:
+
+```bash
+sudo apt-get install -y supervisor
+sudo nano /etc/supervisor/conf.d/dynqr-worker.conf
+```
+
+Paste the following (adjust `APP_PATH` and `APP_USER` to match your server):
 
 ```ini
 [program:dynqr-worker]
 process_name=%(program_name)s_%(process_num)02d
-command=php /path/to/dynqr/artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+command=php /path/to/dynqr/artisan queue:work --sleep=3 --tries=3 --max-time=3600
 autostart=true
 autorestart=true
-stopasgroup=true
-killasgroup=true
-numprocs=2
+stopasneeded=true
+numprocs=1
+user=www-data
 redirect_stderr=true
-stdout_logfile=/path/to/dynqr/storage/logs/worker.log
+stdout_logfile=/path/to/dynqr/storage/logs/queue.log
+stopwaitsecs=3600
 ```
+
+Then load and start the worker:
+
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start dynqr-worker:*
+```
+
+Verify it is running:
+
+```bash
+sudo supervisorctl status
+```
+
+After every deployment, restart the worker so it picks up the new code:
+
+```bash
+sudo supervisorctl restart dynqr-worker:*
+```
+
+> **Note:** Do not use cron for `queue:work`. Cron is only suitable for the Laravel scheduler (`schedule:run`), which fires every minute. The queue worker is a long-running daemon and must be managed by Supervisor.
 
 ---
 

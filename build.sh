@@ -49,6 +49,28 @@ if [[ "$PRODUCTION" == true ]]; then
   php artisan view:cache --ansi
 fi
 
+SUPERVISOR_CONF_DEST="/etc/supervisor/conf.d/dynqr-worker.conf"
+SUPERVISOR_CONF_SRC="$ROOT/deploy/supervisor/dynqr-worker.conf"
+
+if [[ -d /etc/supervisor/conf.d ]]; then
+  if [[ ! -f "$SUPERVISOR_CONF_DEST" ]]; then
+    echo "==> Installing Supervisor worker config..."
+    sed \
+      -e "s|APP_PATH|$ROOT|g" \
+      -e "s|APP_USER|$(whoami)|g" \
+      "$SUPERVISOR_CONF_SRC" | sudo tee "$SUPERVISOR_CONF_DEST" > /dev/null
+    sudo supervisorctl reread
+    sudo supervisorctl update
+    sudo supervisorctl start dynqr-worker:* || true
+    echo "    Supervisor worker installed and started."
+  else
+    echo "==> Supervisor config already exists, restarting worker..."
+    sudo supervisorctl restart dynqr-worker:* || true
+  fi
+else
+  echo "==> Supervisor not found; skipping worker setup. See deploy/supervisor/dynqr-worker.conf."
+fi
+
 if command -v git &>/dev/null && git rev-parse --is-inside-work-tree &>/dev/null; then
   git restore --worktree -- \
     bootstrap/cache/.gitignore \
