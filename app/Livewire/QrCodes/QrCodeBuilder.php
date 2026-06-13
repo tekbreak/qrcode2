@@ -946,7 +946,9 @@ class QrCodeBuilder extends Component
             $actionType = $paidActionService->detectActionType($this->qrCode, $pendingData);
 
             if ($actionType && $paidActionService->requiresPayment($user, $this->qrCode, $pendingData)) {
-                return $paidActionService->createCheckout($user, $this->qrCode, $actionType, $pendingData);
+                $redirect = $paidActionService->createCheckout($user, $this->qrCode, $actionType, $pendingData);
+
+                return $this->redirect($redirect->getTargetUrl(), navigate: false);
             }
         }
 

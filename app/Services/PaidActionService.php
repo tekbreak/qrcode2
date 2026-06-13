@@ -113,7 +113,7 @@ class PaidActionService
             $session = $checkout->asStripeCheckoutSession();
             $paidAction->update(['stripe_checkout_session_id' => $session->id]);
 
-            return redirect()->away($session->url);
+            return new RedirectResponse($session->url);
         }
 
         $this->applyAction($paidAction);
@@ -122,7 +122,9 @@ class PaidActionService
             'paid_at' => now(),
         ]);
 
-        return redirect()->route('qr-codes.index')->with('status', __('qr.updated'));
+        session()->flash('status', __('qr.updated'));
+
+        return new RedirectResponse(route('qr-codes.index'));
     }
 
     public function applyAction(PaidAction $paidAction): void
