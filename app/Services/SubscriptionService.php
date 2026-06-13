@@ -10,6 +10,10 @@ use Laravel\Cashier\Subscription;
 
 class SubscriptionService
 {
+    public function __construct(
+        protected AccountDeletionService $accountDeletionService,
+    ) {}
+
     public function subscribe(
         User $user,
         string $planSlug,
@@ -40,10 +44,14 @@ class SubscriptionService
             if ($this->usesStripeCheckout($priceId)) {
                 $subscription->swap($priceId);
 
+                $this->clearDeletionScheduleIfActive($user);
+
                 return 'swapped';
             }
 
             $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
+
+            $this->clearDeletionScheduleIfActive($user);
 
             return 'dev_applied';
         }
@@ -62,6 +70,8 @@ class SubscriptionService
         }
 
         $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
+
+        $this->clearDeletionScheduleIfActive($user);
 
         return 'dev_applied';
     }
@@ -136,5 +146,14 @@ class SubscriptionService
     protected function defaultSubscription(User $user): ?Subscription
     {
         return $user->subscriptions()->where('type', 'default')->first();
+    }
+
+    protected function clearDeletionScheduleIfActive(User $user): void
+    {
+        $user = $user->fresh();
+
+        if ($user->account_deletion_scheduled_at && $user->subscribed('default')) {
+            $this->accountDeletionService->clearScheduledDeletion($user);
+        }
     }
 }

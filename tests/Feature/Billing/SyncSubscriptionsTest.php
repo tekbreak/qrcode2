@@ -22,7 +22,7 @@ class SyncSubscriptionsTest extends TestCase
     public function test_command_skips_when_stripe_is_not_configured_for_live_billing(): void
     {
         $this->artisan('subscriptions:sync')
-            ->expectsOutputToContain('Stripe is not configured for live billing')
+            ->expectsOutputToContain('Skipping Stripe reconciliation')
             ->assertSuccessful();
     }
 
@@ -50,7 +50,7 @@ class SyncSubscriptionsTest extends TestCase
         User::factory()->count(3)->create();
 
         $this->artisan('subscriptions:sync')
-            ->expectsOutputToContain('Stripe is not configured for live billing')
+            ->expectsOutputToContain('Skipping Stripe reconciliation')
             ->assertSuccessful();
     }
 }

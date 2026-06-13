@@ -28,6 +28,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_admin',
         'selected_plan',
         'plan_selected_at',
+        'account_deletion_scheduled_at',
         'current_team_id',
     ];
 
@@ -41,6 +42,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'plan_selected_at' => 'datetime',
+            'account_deletion_scheduled_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
         ];
