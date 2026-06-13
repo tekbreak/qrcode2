@@ -59,7 +59,12 @@ class QrCodeApiController extends Controller
         }
 
         $user = $request->user();
+        $type = $request->input('type');
         $isDynamic = $request->boolean('is_dynamic', true);
+
+        if ($type === 'pdf') {
+            $isDynamic = true;
+        }
 
         if (! $user->canCreateQrCode(isDynamic: $isDynamic)) {
             return response()->json(['error' => 'Plan QR code limit reached.'], 403);
@@ -85,10 +90,12 @@ class QrCodeApiController extends Controller
         ]);
 
         if ($isDynamic) {
+            $contentData = $qrCode->content_data ?? [];
+
             ShortLink::create([
                 'qr_code_id' => $qrCode->id,
                 'slug' => ShortLink::generateSlug(),
-                'destination_url' => $qrCode->content_data['url'] ?? '',
+                'destination_url' => $contentData['url'] ?? $contentData['file_url'] ?? '',
                 'is_active' => true,
             ]);
         }
@@ -113,8 +120,13 @@ class QrCodeApiController extends Controller
             );
         }
 
-        if ($qrCode->is_dynamic && $qrCode->shortLink && isset($request->input('content_data')['url'])) {
-            $qrCode->shortLink->update(['destination_url' => $request->input('content_data')['url']]);
+        if ($qrCode->is_dynamic && $qrCode->shortLink) {
+            $contentData = $request->input('content_data', []);
+            $destinationUrl = $contentData['url'] ?? $contentData['file_url'] ?? null;
+
+            if ($destinationUrl !== null) {
+                $qrCode->shortLink->update(['destination_url' => $destinationUrl]);
+            }
         }
 
         return response()->json($qrCode->fresh()->load('design', 'shortLink'));

@@ -5,6 +5,38 @@
 ])>
     <div class="mb-8">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ $editing ? __('qr.edit') : __('qr.create') }}</h1>
+
+        @if($step === 1)
+            <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div class="min-w-0 flex-1 sm:max-w-xs">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.category') }}</label>
+                    <select wire:model.live="categoryId"
+                            class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                        <option value="">{{ __('qr.no_category') }}</option>
+                        @foreach($categories as $category)
+                            <option value="{{ $category->id }}">{{ $category->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <button wire:click="toggleNewCategoryForm" type="button"
+                        class="shrink-0 rounded-lg border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-zinc-800 transition">
+                    {{ $showNewCategoryForm ? __('common.cancel') : __('qr.create_new_category') }}
+                </button>
+            </div>
+
+            @if($showNewCategoryForm)
+                <form wire:submit="createAndSelectCategory" class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start">
+                    <div class="min-w-0 flex-1 sm:max-w-md">
+                        <input wire:model="newCategoryName" type="text" placeholder="{{ __('qr.category_name_placeholder') }}"
+                               class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                        @error('newCategoryName') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                    <button type="submit" class="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 transition">
+                        {{ __('common.create') }}
+                    </button>
+                </form>
+            @endif
+        @endif
     </div>
 
     {{-- Step indicator --}}
@@ -73,35 +105,11 @@
 
                 {{-- Type-specific form (right) --}}
                 <div class="min-w-0 space-y-4">
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.name') }}</label>
-                            <input wire:model.live.debounce.500ms="name" type="text" placeholder="{{ __('qr.name_placeholder') }}"
-                                   class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
-                            @error('name') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.category') }}</label>
-                            <select wire:model.live="categoryId"
-                                    class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
-                                <option value="">{{ __('qr.no_category') }}</option>
-                                @foreach($categories as $category)
-                                    <option value="{{ $category->id }}">{{ $category->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.create_category_inline') }}</label>
-                        <form wire:submit="createAndSelectCategory" class="mt-1 flex gap-2">
-                            <input wire:model="newCategoryName" type="text" placeholder="{{ __('qr.category_name_placeholder') }}"
-                                   class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
-                            <button type="submit" class="shrink-0 rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
-                                {{ __('common.create') }}
-                            </button>
-                        </form>
-                        @error('newCategoryName') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.name') }}</label>
+                        <input wire:model.live.debounce.500ms="name" type="text" placeholder="{{ __('qr.name_placeholder') }}"
+                               class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                        @error('name') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                     </div>
 
                     <div>
@@ -302,9 +310,23 @@
                     </div>
 
                     {{-- Dynamic QR section --}}
-                    @php $isDynamicType = \App\Enums\QrCodeType::from($type)->isDynamic(); @endphp
+                    @php
+                        $isDynamicType = \App\Enums\QrCodeType::from($type)->isDynamic();
+                        $pdfUsesShortLink = $type === 'pdf';
+                    @endphp
                     @if($isDynamicType)
                     <div class="rounded-lg border border-gray-200 dark:border-zinc-700 p-4 space-y-3">
+                        @if($pdfUsesShortLink)
+                        <div class="flex items-start gap-3">
+                            <i class="fa-solid fa-link mt-0.5 text-sm text-primary-600 dark:text-primary-400 shrink-0"></i>
+                            <div>
+                                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ __('qr.dynamic') }}</span>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {{ __('qr.pdf_short_link_info') }}
+                                </p>
+                            </div>
+                        </div>
+                        @else
                         {{-- Toggle --}}
                         <label @class(['flex items-start gap-3', 'cursor-not-allowed opacity-75' => $editing && $qrCode?->shortLink, 'cursor-pointer' => !($editing && $qrCode?->shortLink)])>
                             <input wire:model.live="isDynamic" type="checkbox"
@@ -317,8 +339,9 @@
                                 </p>
                             </div>
                         </label>
+                        @endif
 
-                        @if($isDynamic)
+                        @if($isDynamic || $pdfUsesShortLink)
                         <div class="space-y-3 border-t border-gray-100 dark:border-zinc-800 pt-3">
                             {{-- Plan limit warning when creating and over limit --}}
                             @if(!$editing && !auth()->user()->canCreateQrCode(isDynamic: true))
@@ -420,7 +443,7 @@
                     <div class="mt-1 flex justify-between">
                         <span class="text-gray-500 dark:text-gray-400 dark:text-gray-500">Mode:</span>
                         <span class="font-medium">
-                            @if(\App\Enums\QrCodeType::from($type)->isDynamic() && $isDynamic)
+                            @if(\App\Enums\QrCodeType::from($type)->isDynamic() && ($isDynamic || $type === 'pdf'))
                                 {{ __('qr.dynamic') }}
                             @else
                                 {{ __('qr.static') }}

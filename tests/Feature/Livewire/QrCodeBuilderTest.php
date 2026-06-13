@@ -3,12 +3,15 @@
 namespace Tests\Feature\Livewire;
 
 use App\Enums\PlanTier;
+use App\Enums\QrCodeType;
 use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Models\QrCode;
 use App\Models\ShortLink;
 use App\Models\User;
 use App\Services\SubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -229,5 +232,31 @@ class QrCodeBuilderTest extends TestCase
         $this->assertFalse($qrCode->is_dynamic);
         $this->assertCount(1, $qrCode->content_data['networks']);
         $this->assertSame('https://instagram.com/first', $qrCode->content_data['networks'][0]['url']);
+    }
+
+    public function test_pdf_upload_creates_dynamic_short_link_instead_of_exposing_storage_path(): void
+    {
+        Storage::fake('public');
+
+        $user = User::factory()->create();
+        $file = UploadedFile::fake()->create('brochure.pdf', 100, 'application/pdf');
+
+        Livewire::actingAs($user)
+            ->test(QrCodeBuilder::class)
+            ->set('name', 'My PDF QR')
+            ->set('type', 'pdf')
+            ->set('pdfFile', $file)
+            ->call('save')
+            ->assertRedirect(route('qr-codes.index'));
+
+        $qrCode = QrCode::with('shortLink')->where('name', 'My PDF QR')->first();
+
+        $this->assertNotNull($qrCode);
+        $this->assertSame(QrCodeType::Pdf, $qrCode->type);
+        $this->assertTrue($qrCode->is_dynamic);
+        $this->assertNotNull($qrCode->shortLink);
+        $this->assertStringContainsString('/storage/uploads/', $qrCode->shortLink->destination_url);
+        $this->assertStringContainsString(config('app.proxy_domain'), $qrCode->getEncodedContent());
+        $this->assertStringNotContainsString('/storage/uploads/', $qrCode->getEncodedContent());
     }
 }

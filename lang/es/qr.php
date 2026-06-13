@@ -86,6 +86,10 @@ return [
     'preview' => 'Vista previa',
     'download_png' => 'Descargar PNG',
     'download_svg' => 'Descargar SVG',
+    'download_qr' => 'Descargar Código QR',
+    'choose_format' => 'Elige un formato',
+    'format_not_available' => 'La exportación :format no está disponible en tu plan. Actualiza a Pro.',
+    'upgrade_to_unlock' => 'Actualiza para desbloquear',
     'save' => 'Guardar Código QR',
     'save_and_download' => 'Guardar y Descargar',
 
@@ -122,8 +126,14 @@ return [
         'wallet_address' => 'Dirección de wallet',
         'amount' => 'Cantidad',
         'file_url' => 'URL del archivo',
+        'short_link' => 'Enlace corto',
     ],
+    'pdf_short_link_info' => 'Los archivos subidos se comparten mediante un enlace corto (p. ej. go.dynqr.es/abc123) para ocultar la ruta real del archivo.',
     'view_analytics' => 'Ver analíticas',
     'pause' => 'Pausar',
     'activate' => 'Activar',
+
+    'type_label' => 'Tipo',
+    'category' => 'Categoría',
+    'no_category' => 'Sin categoría',
 ];

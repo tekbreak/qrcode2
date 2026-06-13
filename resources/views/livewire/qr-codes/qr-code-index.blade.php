@@ -52,27 +52,25 @@
     @else
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             @foreach($qrCodes as $qr)
-                <div class="group flex h-full flex-col rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-sm transition hover:shadow-md">
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1 min-w-0">
+                <div class="group relative flex h-full flex-col rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 pt-5 pb-3 shadow-sm transition hover:shadow-md">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
                             <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $qr->name }}</h3>
-                            <div class="mt-1 flex flex-wrap items-center gap-2">
-                                @if($qr->category)
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $qr->category->badgeClasses() }}">
-                                        {{ $qr->category->name }}
-                                    </span>
-                                @endif
-                                <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">
-                                    {{ $qr->type->label() }}
-                                </span>
-                                @if($qr->is_dynamic)
-                                    <span class="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:text-primary-400">Dynamic</span>
-                                @endif
-                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $qr->status === 'active' ? 'bg-green-100 text-green-700 dark:text-green-400' : 'bg-yellow-100 text-yellow-700' }}">
-                                    {{ ucfirst($qr->status) }}
-                                </span>
-                            </div>
+                            @if($qr->is_dynamic)
+                                <p class="mt-0.5 text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ __('qr.dynamic') }}</p>
+                            @else
+                                <p class="mt-0.5 text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">{{ __('qr.static') }}</p>
+                            @endif
+                            <p class="mt-1.5 flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                                <span class="truncate">{{ __('qr.category') }}: {{ $qr->category?->name ?? __('qr.no_category') }}</span>
+                                <span class="shrink-0">{{ __('qr.type_label') }}: {{ $qr->type->label() }}</span>
+                            </p>
                         </div>
+                        <span
+                            class="mt-1 inline-block h-3.5 w-3.5 shrink-0 rounded-full {{ $qr->status === 'active' ? 'bg-green-500' : 'bg-red-500' }}"
+                            title="{{ $qr->status === 'active' ? __('common.active') : __('common.inactive') }}"
+                            aria-label="{{ $qr->status === 'active' ? __('common.active') : __('common.inactive') }}"
+                        ></span>
                     </div>
 
                     @if($displayPreview = $qr->getCardDisplayUrl())
@@ -89,13 +87,10 @@
                         </div>
                     @endif
 
-                    <div class="mt-auto pt-3">
-                        <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                            <span>{{ number_format($qr->total_scans) }} {{ __('qr.scans') }}</span>
-                            <span>{{ $qr->created_at->diffForHumans() }}</span>
-                        </div>
+                    <div class="mt-auto flex items-center justify-between gap-3 pt-3">
+                        <span class="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ number_format($qr->total_scans) }} {{ __('qr.scans') }}</span>
 
-                        <div class="mt-3 flex items-center justify-end gap-2">
+                        <div class="flex items-center gap-2">
                         @if($qr->is_dynamic)
                         <a href="{{ route('qr-codes.edit', $qr) }}"
                            title="{{ __('common.edit') }}"
@@ -110,12 +105,12 @@
                             <i class="fa-solid fa-eye text-sm"></i>
                         </a>
                         @endif
-                        <a href="#"
-                           wire:click.prevent="downloadPng({{ $qr->id }})"
-                           title="{{ __('common.download') }}"
-                           class="rounded p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition">
+                        <button type="button"
+                                wire:click="openDownload({{ $qr->id }})"
+                                title="{{ __('common.download') }}"
+                                class="rounded p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition">
                             <i class="fa-solid fa-download text-sm"></i>
-                        </a>
+                        </button>
                         @if($qr->is_dynamic)
                         <a href="{{ route('analytics.show', $qr) }}"
                            title="{{ __('nav.analytics') }}"
@@ -138,6 +133,49 @@
 
         <div class="mt-6">
             {{ $qrCodes->links() }}
+        </div>
+    @endif
+
+    @if($downloadingQr)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" wire:click.self="closeDownload">
+            <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" wire:click.stop>
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{{ __('qr.download_qr') }}</h2>
+                        <p class="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">{{ $downloadingQr->name }}</p>
+                    </div>
+                    <button type="button" wire:click="closeDownload" title="{{ __('common.cancel') }}"
+                            class="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-zinc-800 dark:hover:text-gray-200">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('qr.choose_format') }}</p>
+
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                    @foreach($downloadFormats as $format)
+                        @php($available = auth()->user()->hasFeature($format['feature']))
+                        @if($available)
+                            <button type="button"
+                                    wire:click="download({{ $downloadingQr->id }}, '{{ $format['id'] }}')"
+                                    class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-900 transition hover:border-primary-300 hover:bg-primary-50 dark:border-zinc-700 dark:text-gray-100 dark:hover:border-primary-700 dark:hover:bg-primary-950/50">
+                                <i class="{{ $format['icon'] }} text-lg text-primary-600 dark:text-primary-400"></i>
+                                {{ $format['label'] }}
+                            </button>
+                        @else
+                            <a href="{{ route('billing.index') }}"
+                               class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-200 px-4 py-3 text-sm font-medium text-gray-400 transition hover:border-primary-300 hover:bg-gray-50 dark:border-zinc-700 dark:text-gray-500 dark:hover:border-primary-700 dark:hover:bg-zinc-800/60">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="{{ $format['icon'] }} text-lg"></i>
+                                    <i class="fa-solid fa-lock text-xs"></i>
+                                </span>
+                                {{ $format['label'] }}
+                                <span class="text-xs">{{ __('qr.upgrade_to_unlock') }}</span>
+                            </a>
+                        @endif
+                    @endforeach
+                </div>
+            </div>
         </div>
     @endif
 

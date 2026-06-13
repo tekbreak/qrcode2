@@ -110,7 +110,14 @@ class QrCode extends Model
                 $this->contentField(__('qr.url'), $d['url'] ?? ''),
             ],
             QrCodeType::Pdf => [
-                $this->contentField(__('qr.fields.file_url'), $d['file_url'] ?? ''),
+                $this->contentField(
+                    $this->is_dynamic && $this->shortLink
+                        ? __('qr.fields.short_link')
+                        : __('qr.fields.file_url'),
+                    $this->is_dynamic && $this->shortLink
+                        ? $this->shortLink->getFullUrl()
+                        : ($d['file_url'] ?? ''),
+                ),
             ],
             QrCodeType::Social => collect($d['networks'] ?? [])
                 ->map(fn (array $network) => $this->contentField(
@@ -180,7 +187,9 @@ class QrCode extends Model
 
         return match ($this->type) {
             QrCodeType::Url, QrCodeType::AppStore, QrCodeType::Menu => $d['url'] ?? '',
-            QrCodeType::Pdf => $d['file_url'] ?? '',
+            QrCodeType::Pdf => $this->is_dynamic && $this->shortLink
+                ? $this->shortLink->getFullUrl()
+                : ($d['file_url'] ?? ''),
             QrCodeType::Social => $this->getSocialStaticUrl(),
             QrCodeType::Text => $d['text'] ?? '',
             QrCodeType::VCard => $this->buildVCardPreview(),

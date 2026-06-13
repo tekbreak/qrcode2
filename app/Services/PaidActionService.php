@@ -150,7 +150,8 @@ class PaidActionService
             );
         }
 
-        $destinationUrl = $data['destination_url'] ?? ($data['content_data']['url'] ?? '');
+        $destinationUrl = $data['destination_url']
+            ?? ($data['content_data']['url'] ?? $data['content_data']['file_url'] ?? '');
         $linkType = $data['link_type'] ?? 'redirect';
         $linkPassword = $data['link_password'] ?? '';
         $expiresAt = $data['expires_at'] ?? null;

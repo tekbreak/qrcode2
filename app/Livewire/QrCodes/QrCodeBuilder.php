@@ -30,6 +30,7 @@ class QrCodeBuilder extends Component
     public string $name = '';
     public ?int $categoryId = null;
     public string $newCategoryName = '';
+    public bool $showNewCategoryForm = false;
     public string $type = 'url';
     public bool $isDynamic = false;
 
@@ -113,6 +114,10 @@ class QrCodeBuilder extends Component
     public function selectType(string $value): void
     {
         $this->type = $value;
+
+        if ($value === QrCodeType::Pdf->value) {
+            $this->isDynamic = true;
+        }
     }
 
     public static function socialPlatforms(): array
@@ -334,6 +339,12 @@ class QrCodeBuilder extends Component
 
     public function updatedIsDynamic(bool $value): void
     {
+        if ($this->type === QrCodeType::Pdf->value && ! $value) {
+            $this->isDynamic = true;
+
+            return;
+        }
+
         if ($value || $this->type !== 'social' || count($this->socialNetworks) <= 1) {
             return;
         }
@@ -600,6 +611,7 @@ class QrCodeBuilder extends Component
             QrCodeType::Sms => $this->fillSms($data),
             QrCodeType::Social => $this->fillSocial($data),
             QrCodeType::AppStore, QrCodeType::Menu => $this->socialUrl = $data['url'] ?? '',
+            QrCodeType::Pdf => $this->existingFileUrl = $data['file_url'] ?? null,
             default => null,
         };
 
@@ -888,11 +900,21 @@ class QrCodeBuilder extends Component
                 $logoPath = $this->existingLogo;
             }
 
+            $qrType = QrCodeType::from($this->type);
+            $makeDynamic = $qrType->isDynamic() && ($this->isDynamic || $qrType === QrCodeType::Pdf);
+
             $tempQr = new QrCode([
                 'type' => $this->type,
-                'is_dynamic' => false,
+                'is_dynamic' => $makeDynamic,
                 'content_data' => $this->getContentData(),
             ]);
+
+            if ($makeDynamic) {
+                $tempQr->setRelation('shortLink', new ShortLink([
+                    'slug' => $this->qrCode?->shortLink?->slug ?? 'preview',
+                    'domain' => $this->qrCode?->shortLink?->domain,
+                ]));
+            }
             $tempQr->setRelation('design', new \App\Models\QrDesign([
                 'fg_color' => $this->fgColor,
                 'bg_color' => $this->bgColor,
@@ -927,6 +949,7 @@ class QrCodeBuilder extends Component
         $paidActionService = app(PaidActionService::class);
         $qrType = QrCodeType::from($this->type);
         $isDynamicCapable = $qrType->isDynamic();
+        $willBeDynamic = $isDynamicCapable && ($this->isDynamic || $qrType === QrCodeType::Pdf);
 
         if (! $this->editing && ! $user->canCreateQrCode(isDynamic: false)) {
             $this->addError('name', __('qr.plan_limit_reached'));
@@ -936,8 +959,8 @@ class QrCodeBuilder extends Component
 
         // Check dynamic QR plan limit for first-time activation (new or upgrading static→dynamic)
         $isFirstDynamicActivation =
-            (! $this->editing && $this->isDynamic && $isDynamicCapable) ||
-            ($this->editing && $isDynamicCapable && $this->isDynamic && ! $this->qrCode->shortLink);
+            (! $this->editing && $willBeDynamic) ||
+            ($this->editing && $willBeDynamic && ! $this->qrCode->shortLink);
 
         if ($isFirstDynamicActivation && ! $user->canCreateQrCode(isDynamic: true)) {
             $this->addError('name', __('qr.dynamic_plan_limit_reached'));
@@ -947,7 +970,7 @@ class QrCodeBuilder extends Component
 
         $pendingData = $this->buildPendingData();
 
-        if ($this->editing && $isDynamicCapable && $this->isDynamic && $this->qrCode->shortLink) {
+        if ($this->editing && $willBeDynamic && $this->qrCode->shortLink) {
             $actionType = $paidActionService->detectActionType($this->qrCode, $pendingData);
 
             if ($actionType && $paidActionService->requiresPayment($user, $this->qrCode, $pendingData)) {
@@ -1029,7 +1052,7 @@ class QrCodeBuilder extends Component
         $user = auth()->user();
         $qrType = QrCodeType::from($this->type);
         $isDynamicCapable = $qrType->isDynamic();
-        $makeDynamic = $isDynamicCapable && $this->isDynamic;
+        $makeDynamic = $isDynamicCapable && ($this->isDynamic || $qrType === QrCodeType::Pdf);
 
         $qrData = [
             'user_id' => $user->id,
@@ -1100,6 +1123,16 @@ class QrCodeBuilder extends Component
         }, str($this->name)->slug() . '.png', ['Content-Type' => 'image/png']);
     }
 
+    public function toggleNewCategoryForm(): void
+    {
+        $this->showNewCategoryForm = ! $this->showNewCategoryForm;
+
+        if (! $this->showNewCategoryForm) {
+            $this->newCategoryName = '';
+            $this->resetValidation('newCategoryName');
+        }
+    }
+
     public function createAndSelectCategory(): void
     {
         $this->validate(['newCategoryName' => 'required|string|max:255']);
@@ -1112,6 +1145,7 @@ class QrCodeBuilder extends Component
 
         $this->categoryId = $category->id;
         $this->newCategoryName = '';
+        $this->showNewCategoryForm = false;
     }
 
     protected function resolveCategoryId(): ?int
