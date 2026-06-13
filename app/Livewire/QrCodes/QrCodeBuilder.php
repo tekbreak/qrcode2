@@ -28,6 +28,8 @@ class QrCodeBuilder extends Component
 
     // QR Code fields
     public string $name = '';
+    public ?int $categoryId = null;
+    public string $newCategoryName = '';
     public string $type = 'url';
     public bool $isDynamic = false;
 
@@ -410,6 +412,7 @@ class QrCodeBuilder extends Component
             'step' => $this->step,
             'type' => $this->type,
             'name' => $this->name,
+            'categoryId' => $this->categoryId,
             'url' => $truncate($this->url, 800),
             'text' => $truncate($this->text, 1000),
             'firstName' => $this->firstName,
@@ -484,6 +487,7 @@ class QrCodeBuilder extends Component
             $this->step = (int) ($payload['step'] ?? 1);
             $this->type = $payload['type'] ?? 'url';
             $this->name = $payload['name'] ?? '';
+            $this->categoryId = isset($payload['categoryId']) ? (int) $payload['categoryId'] : null;
             $this->url = $payload['url'] ?? '';
             $this->text = $payload['text'] ?? '';
             $this->firstName = $payload['firstName'] ?? '';
@@ -581,6 +585,7 @@ class QrCodeBuilder extends Component
     protected function fillFromExisting(QrCode $qrCode): void
     {
         $this->name = $qrCode->name;
+        $this->categoryId = $qrCode->category_id;
         $this->type = $qrCode->type->value;
         $this->isDynamic = $qrCode->is_dynamic;
 
@@ -990,6 +995,7 @@ class QrCodeBuilder extends Component
 
         return [
             'name' => $this->name,
+            'category_id' => $this->resolveCategoryId(),
             'type' => $this->type,
             'content_data' => $contentData,
             'destination_url' => $destinationUrl,
@@ -1028,6 +1034,7 @@ class QrCodeBuilder extends Component
         $qrData = [
             'user_id' => $user->id,
             'team_id' => $user->current_team_id,
+            'category_id' => $pendingData['category_id'],
             'name' => $pendingData['name'],
             'type' => $pendingData['type'],
             'is_dynamic' => $makeDynamic,
@@ -1093,6 +1100,31 @@ class QrCodeBuilder extends Component
         }, str($this->name)->slug() . '.png', ['Content-Type' => 'image/png']);
     }
 
+    public function createAndSelectCategory(): void
+    {
+        $this->validate(['newCategoryName' => 'required|string|max:255']);
+
+        $name = trim($this->newCategoryName);
+        $category = auth()->user()->categories()->firstOrCreate(
+            ['name' => $name],
+            ['color' => 'blue']
+        );
+
+        $this->categoryId = $category->id;
+        $this->newCategoryName = '';
+    }
+
+    protected function resolveCategoryId(): ?int
+    {
+        if (! $this->categoryId) {
+            return null;
+        }
+
+        return auth()->user()->categories()->whereKey($this->categoryId)->exists()
+            ? $this->categoryId
+            : null;
+    }
+
     public function getAvailableTypesProperty(): array
     {
         return QrCodeType::allTypes();
@@ -1100,7 +1132,9 @@ class QrCodeBuilder extends Component
 
     public function render()
     {
-        return view('livewire.qr-codes.qr-code-builder')
+        return view('livewire.qr-codes.qr-code-builder', [
+            'categories' => auth()->user()->categories()->orderBy('name')->get(),
+        ])
             ->layout('layouts.app', ['title' => $this->editing ? __('qr.edit') : __('qr.create')]);
     }
 }

@@ -18,6 +18,7 @@ class QrCode extends Model
     protected $fillable = [
         'user_id',
         'team_id',
+        'category_id',
         'name',
         'type',
         'is_dynamic',
@@ -44,6 +45,11 @@ class QrCode extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
     }
 
     public function design(): HasOne

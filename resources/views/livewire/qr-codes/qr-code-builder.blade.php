@@ -73,11 +73,35 @@
 
                 {{-- Type-specific form (right) --}}
                 <div class="min-w-0 space-y-4">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.name') }}</label>
+                            <input wire:model.live.debounce.500ms="name" type="text" placeholder="{{ __('qr.name_placeholder') }}"
+                                   class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                            @error('name') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.category') }}</label>
+                            <select wire:model.live="categoryId"
+                                    class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                                <option value="">{{ __('qr.no_category') }}</option>
+                                @foreach($categories as $category)
+                                    <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.name') }}</label>
-                        <input wire:model.live.debounce.500ms="name" type="text" placeholder="{{ __('qr.name_placeholder') }}"
-                               class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
-                        @error('name') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.create_category_inline') }}</label>
+                        <form wire:submit="createAndSelectCategory" class="mt-1 flex gap-2">
+                            <input wire:model="newCategoryName" type="text" placeholder="{{ __('qr.category_name_placeholder') }}"
+                                   class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                            <button type="submit" class="shrink-0 rounded-lg bg-gray-100 dark:bg-zinc-800 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-zinc-700 transition">
+                                {{ __('common.create') }}
+                            </button>
+                        </form>
+                        @error('newCategoryName') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                     </div>
 
                     <div>

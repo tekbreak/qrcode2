@@ -15,7 +15,13 @@ class QrCodeIndex extends Component
     public string $search = '';
     public string $filterType = '';
     public string $filterStatus = '';
+    public string $filterCategory = '';
     public ?int $viewingQrId = null;
+
+    public function updatingFilterCategory(): void
+    {
+        $this->resetPage();
+    }
 
     public function updatingSearch(): void
     {
@@ -85,7 +91,7 @@ class QrCodeIndex extends Component
     public function render()
     {
         $query = auth()->user()->qrCodes()
-            ->with('design', 'shortLink')
+            ->with('design', 'shortLink', 'category')
             ->latest();
 
         if ($this->search) {
@@ -100,8 +106,13 @@ class QrCodeIndex extends Component
             $query->where('status', $this->filterStatus);
         }
 
+        if ($this->filterCategory) {
+            $query->where('category_id', $this->filterCategory);
+        }
+
         return view('livewire.qr-codes.qr-code-index', [
             'qrCodes' => $query->paginate(12),
+            'categories' => auth()->user()->categories()->orderBy('name')->get(),
             'viewingQr' => $this->viewingQrId
                 ? auth()->user()->qrCodes()->find($this->viewingQrId)
                 : null,

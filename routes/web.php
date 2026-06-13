@@ -15,6 +15,7 @@ use App\Livewire\Auth\ResetPassword;
 use App\Livewire\Billing\BillingIndex;
 use App\Livewire\Dashboard;
 use App\Livewire\QrCodes\BulkGenerator;
+use App\Livewire\QrCodes\CategoryIndex;
 use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Livewire\QrCodes\QrCodeIndex;
 use App\Livewire\Settings\SettingsIndex;
@@ -67,6 +68,7 @@ Route::middleware(['auth', 'plan.selected'])->group(function () {
     Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
     Route::get('/qr-codes', QrCodeIndex::class)->name('qr-codes.index');
+    Route::get('/qr-codes/categories', CategoryIndex::class)->name('categories.index');
     Route::get('/qr-codes/create', QrCodeBuilder::class)->name('qr-codes.create');
     Route::get('/qr-codes/{qrCode}/edit', QrCodeBuilder::class)->name('qr-codes.edit');
     Route::get('/qr-codes/bulk', BulkGenerator::class)->name('qr-codes.bulk');

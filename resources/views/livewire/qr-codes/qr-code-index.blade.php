@@ -1,6 +1,11 @@
 <div>
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ __('qr.my_qr_codes') }}</h1>
+        <div class="flex flex-wrap items-center gap-3">
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ __('qr.my_qr_codes') }}</h1>
+            <a href="{{ route('categories.index') }}" class="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+                {{ __('qr.show_categories') }}
+            </a>
+        </div>
         <a href="{{ route('qr-codes.create') }}" class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 transition">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             {{ __('qr.create') }}
@@ -24,6 +29,14 @@
             <option value="active">{{ __('common.active') }}</option>
             <option value="paused">Paused</option>
         </select>
+        @if($categories->isNotEmpty())
+            <select wire:model.live="filterCategory" class="rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
+                <option value="">{{ __('qr.all_categories') }}</option>
+                @foreach($categories as $category)
+                    <option value="{{ $category->id }}">{{ $category->name }}</option>
+                @endforeach
+            </select>
+        @endif
     </div>
 
     {{-- QR Code Grid --}}
@@ -43,7 +56,12 @@
                     <div class="flex items-start justify-between">
                         <div class="flex-1 min-w-0">
                             <h3 class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{{ $qr->name }}</h3>
-                            <div class="mt-1 flex items-center gap-2">
+                            <div class="mt-1 flex flex-wrap items-center gap-2">
+                                @if($qr->category)
+                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $qr->category->badgeClasses() }}">
+                                        {{ $qr->category->name }}
+                                    </span>
+                                @endif
                                 <span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-zinc-800 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">
                                     {{ $qr->type->label() }}
                                 </span>
