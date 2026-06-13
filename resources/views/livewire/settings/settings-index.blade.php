@@ -47,11 +47,13 @@
         </form>
     </div>
 
+    @if(auth()->user()->hasFeature(\App\Enums\Feature::Teams))
     {{-- Team management --}}
     <div class="rounded-xl bg-white dark:bg-zinc-900 p-6 shadow-sm ring-1 ring-gray-900/5 dark:ring-zinc-800">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{{ __('settings.team') }}</h2>
         @livewire('teams.team-manager')
     </div>
+    @endif
 
     {{-- Danger Zone --}}
     <div class="rounded-xl bg-white dark:bg-zinc-900 p-6 shadow-sm ring-1 ring-red-200 dark:ring-red-900">

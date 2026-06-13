@@ -57,11 +57,11 @@ class RecordScanJob implements ShouldQueue
 
         $ua = strtolower($ua);
 
-        $deviceType = 'desktop';
+        $device_type = 'desktop';
         if (str_contains($ua, 'mobile') || str_contains($ua, 'android')) {
-            $deviceType = 'mobile';
+            $device_type = 'mobile';
         } elseif (str_contains($ua, 'tablet') || str_contains($ua, 'ipad')) {
-            $deviceType = 'tablet';
+            $device_type = 'tablet';
         }
 
         $os = 'other';

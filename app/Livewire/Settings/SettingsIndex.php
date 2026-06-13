@@ -21,7 +21,7 @@ class SettingsIndex extends Component
         $user = auth()->user();
         $this->name = $user->name;
         $this->email = $user->email;
-        $this->locale = $user->locale;
+        $this->locale = $user->locale ?? 'en';
     }
 
     public function updateProfile()
