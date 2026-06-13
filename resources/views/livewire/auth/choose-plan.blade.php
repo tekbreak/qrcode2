@@ -20,8 +20,8 @@
         </div>
     @endif
 
-    @if($errorMessage)
-        <div class="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">{{ $errorMessage }}</div>
+    @if(session('error'))
+        <div class="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">{{ session('error') }}</div>
     @endif
 
     <div class="mt-8 flex items-center justify-center gap-3">
@@ -90,15 +90,15 @@
                 </ul>
 
                 <div class="mt-6">
-                    <button wire:click="selectPlan('{{ $plan->slug }}')"
-                            wire:loading.attr="disabled"
-                            wire:target="selectPlan('{{ $plan->slug }}')"
-                            class="w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 {{ $isPopular ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-primary-600 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/50' }}">
-                        <span wire:loading.remove wire:target="selectPlan('{{ $plan->slug }}')">
+                    <form method="POST" action="{{ route('auth.choose-plan.store') }}">
+                        @csrf
+                        <input type="hidden" name="plan" value="{{ $plan->slug }}">
+                        <input type="hidden" name="yearly" value="{{ $yearly ? '1' : '0' }}">
+                        <button type="submit"
+                                class="w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition {{ $isPopular ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-primary-600 text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/50' }}">
                             {{ __('auth.select_plan', ['plan' => $plan->name]) }}
-                        </span>
-                        <span wire:loading wire:target="selectPlan('{{ $plan->slug }}')">{{ __('common.loading') }}…</span>
-                    </button>
+                        </button>
+                    </form>
                 </div>
             </div>
         @endforeach

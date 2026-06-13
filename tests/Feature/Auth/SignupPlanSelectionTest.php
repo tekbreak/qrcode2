@@ -3,7 +3,6 @@
 namespace Tests\Feature\Auth;
 
 use App\Enums\PlanTier;
-use App\Livewire\Auth\ChoosePlan;
 use App\Livewire\Auth\Register;
 use App\Models\User;
 use App\Services\SignupService;
@@ -48,9 +47,7 @@ class SignupPlanSelectionTest extends TestCase
             ],
         ]);
 
-        Livewire::test(ChoosePlan::class)
-            ->call('selectPlan', 'starter')
-            ->assertHasNoErrors()
+        $this->post(route('auth.choose-plan.store'), ['plan' => 'starter', 'yearly' => 0])
             ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
         $user = User::where('email', 'jane@example.com')->first();
@@ -72,9 +69,7 @@ class SignupPlanSelectionTest extends TestCase
             ],
         ]);
 
-        Livewire::test(ChoosePlan::class)
-            ->call('selectPlan', 'pro')
-            ->assertHasNoErrors()
+        $this->post(route('auth.choose-plan.store'), ['plan' => 'pro', 'yearly' => 0])
             ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
         $user = User::where('email', 'jane@example.com')->first();
@@ -120,9 +115,7 @@ class SignupPlanSelectionTest extends TestCase
             ],
         ]);
 
-        Livewire::test(ChoosePlan::class)
-            ->call('selectPlan', 'pro')
-            ->assertHasNoErrors()
+        $this->post(route('auth.choose-plan.store'), ['plan' => 'pro', 'yearly' => 0])
             ->assertRedirect(route('dashboard', ['welcome' => 1]));
 
         $user = User::where('email', 'jane@example.com')->first();
@@ -171,9 +164,7 @@ class SignupPlanSelectionTest extends TestCase
             ],
         ]);
 
-        Livewire::test(ChoosePlan::class)
-            ->call('selectPlan', 'starter')
-            ->assertHasNoErrors()
+        $this->post(route('auth.choose-plan.store'), ['plan' => 'starter', 'yearly' => 0])
             ->assertRedirect(route('dashboard', ['welcome' => 1]));
     }
 }

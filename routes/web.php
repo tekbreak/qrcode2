@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\ChoosePlanController;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\LanguageController;
@@ -43,6 +44,7 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::get('/choose-plan', ChoosePlan::class)->name('auth.choose-plan');
+Route::post('/choose-plan', [ChoosePlanController::class, 'store'])->name('auth.choose-plan.store');
 
 // Authenticated routes (plan selection not required)
 Route::middleware('auth')->group(function () {
