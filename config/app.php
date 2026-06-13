@@ -51,7 +51,7 @@ return [
     |
     */
 
-    'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', false),
+    'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', env('APP_ENV') === 'local'),
 
     /*
     |--------------------------------------------------------------------------

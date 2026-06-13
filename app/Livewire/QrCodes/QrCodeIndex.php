@@ -15,6 +15,7 @@ class QrCodeIndex extends Component
     public string $search = '';
     public string $filterType = '';
     public string $filterStatus = '';
+    public ?int $viewingQrId = null;
 
     public function updatingSearch(): void
     {
@@ -24,6 +25,7 @@ class QrCodeIndex extends Component
     public function delete(int $id): void
     {
         $qr = auth()->user()->qrCodes()->findOrFail($id);
+        $this->authorize('delete', $qr);
         $qr->delete();
         session()->flash('status', __('qr.deleted'));
     }
@@ -68,6 +70,18 @@ class QrCodeIndex extends Component
         }, str($qr->name)->slug() . '.svg', ['Content-Type' => 'image/svg+xml']);
     }
 
+    public function view(int $id): void
+    {
+        $qr = auth()->user()->qrCodes()->findOrFail($id);
+        $this->authorize('view', $qr);
+        $this->viewingQrId = $qr->id;
+    }
+
+    public function closeView(): void
+    {
+        $this->viewingQrId = null;
+    }
+
     public function render()
     {
         $query = auth()->user()->qrCodes()
@@ -88,6 +102,9 @@ class QrCodeIndex extends Component
 
         return view('livewire.qr-codes.qr-code-index', [
             'qrCodes' => $query->paginate(12),
+            'viewingQr' => $this->viewingQrId
+                ? auth()->user()->qrCodes()->find($this->viewingQrId)
+                : null,
         ])->layout('layouts.app', ['title' => __('qr.my_qr_codes')]);
     }
 }

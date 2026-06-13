@@ -85,4 +85,43 @@ class RedirectControllerTest extends TestCase
                 && $job->qrCodeId === $link->qr_code_id;
         });
     }
+
+    public function test_social_hub_renders_landing_page(): void
+    {
+        Queue::fake();
+
+        $qrCode = QrCode::factory()->create([
+            'type' => 'social',
+            'is_dynamic' => true,
+            'content_data' => [
+                'networks' => [
+                    [
+                        'platform' => 'instagram',
+                        'identifier' => 'johndoe',
+                        'url' => 'https://instagram.com/johndoe',
+                    ],
+                    [
+                        'platform' => 'tiktok',
+                        'identifier' => 'johndoe',
+                        'url' => 'https://tiktok.com/@johndoe',
+                    ],
+                ],
+            ],
+        ]);
+
+        $link = ShortLink::factory()->create([
+            'qr_code_id' => $qrCode->id,
+            'slug' => 'socialhub1',
+            'link_type' => 'social_hub',
+            'destination_url' => '',
+        ]);
+
+        $this->getRedirect($link->slug)
+            ->assertOk()
+            ->assertViewIs('redirect.social-hub')
+            ->assertSee('Instagram')
+            ->assertSee('TikTok');
+
+        Queue::assertPushed(RecordScanJob::class);
+    }
 }

@@ -2,18 +2,18 @@
 
 namespace Tests\Unit\Services;
 
-use App\Services\QrCodeGeneratorService;
+use App\Services\Generators\ChillerlanGdEngine;
 use ReflectionMethod;
 use Tests\TestCase;
 
 class QrCodeGeneratorServiceTest extends TestCase
 {
-    private QrCodeGeneratorService $service;
+    private ChillerlanGdEngine $engine;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = app(QrCodeGeneratorService::class);
+        $this->engine = app(ChillerlanGdEngine::class);
     }
 
     public function test_hex_to_rgb_converts_six_digit_hex(): void
@@ -46,9 +46,9 @@ class QrCodeGeneratorServiceTest extends TestCase
 
     private function invokeProtected(string $method, mixed ...$args): mixed
     {
-        $reflection = new ReflectionMethod(QrCodeGeneratorService::class, $method);
+        $reflection = new ReflectionMethod(ChillerlanGdEngine::class, $method);
         $reflection->setAccessible(true);
 
-        return $reflection->invoke($this->service, ...$args);
+        return $reflection->invoke($this->engine, ...$args);
     }
 }

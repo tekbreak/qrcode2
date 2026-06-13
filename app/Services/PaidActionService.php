@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\PaidActionType;
+use App\Enums\QrCodeType;
 use App\Models\PaidAction;
 use App\Models\QrCode;
 use App\Models\ShortLink;
@@ -37,6 +38,20 @@ class PaidActionService
             return null;
         }
 
+        if ($qrCode->type === QrCodeType::Social) {
+            $currentNetworks = $this->normalizeNetworks($qrCode->content_data['networks'] ?? []);
+            $pendingNetworks = $this->normalizeNetworks($pendingData['content_data']['networks'] ?? []);
+
+            if ($currentNetworks !== $pendingNetworks) {
+                return PaidActionType::EditDynamicQr;
+            }
+
+            $pendingLinkType = $pendingData['link_type'] ?? 'redirect';
+            if ($pendingLinkType !== ($shortLink->link_type ?? 'redirect')) {
+                return PaidActionType::EditDynamicQr;
+            }
+        }
+
         $destinationUrl = $pendingData['destination_url'] ?? '';
         if ($destinationUrl !== ($shortLink->destination_url ?? '')) {
             return PaidActionType::EditDynamicQr;
@@ -64,6 +79,11 @@ class PaidActionService
         }
 
         return null;
+    }
+
+    protected function normalizeNetworks(array $networks): string
+    {
+        return json_encode(array_values($networks));
     }
 
     public function createCheckout(User $user, QrCode $qrCode, PaidActionType $actionType, array $pendingData): RedirectResponse
@@ -129,6 +149,7 @@ class PaidActionService
         }
 
         $destinationUrl = $data['destination_url'] ?? ($data['content_data']['url'] ?? '');
+        $linkType = $data['link_type'] ?? 'redirect';
         $linkPassword = $data['link_password'] ?? '';
         $expiresAt = $data['expires_at'] ?? null;
         $maxScans = $data['max_scans'] ?? null;
@@ -137,6 +158,7 @@ class PaidActionService
         if ($qrCode->shortLink) {
             $qrCode->shortLink->update([
                 'destination_url' => $destinationUrl,
+                'link_type' => $linkType,
                 'password_hash' => $linkPassword ? bcrypt($linkPassword) : $qrCode->shortLink->password_hash,
                 'expires_at' => $expiresAt ? \Carbon\Carbon::parse($expiresAt) : $qrCode->shortLink->expires_at,
                 'max_scans' => $maxScans,
@@ -148,6 +170,7 @@ class PaidActionService
             ShortLink::create([
                 'qr_code_id' => $qrCode->id,
                 'slug' => $slug,
+                'link_type' => $linkType,
                 'destination_url' => $destinationUrl,
                 'password_hash' => $linkPassword ? bcrypt($linkPassword) : null,
                 'expires_at' => $expiresAt ? \Carbon\Carbon::parse($expiresAt) : null,

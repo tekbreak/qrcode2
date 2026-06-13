@@ -110,4 +110,110 @@ class QrCodeModelTest extends TestCase
 
         $this->assertSame('geo:48.8566,2.3522', $qrCode->getEncodedContent());
     }
+
+    public function test_get_encoded_content_for_static_social_uses_first_network_url(): void
+    {
+        $qrCode = QrCode::factory()->make([
+            'type' => QrCodeType::Social,
+            'is_dynamic' => false,
+            'content_data' => [
+                'networks' => [
+                    [
+                        'platform' => 'instagram',
+                        'identifier' => 'johndoe',
+                        'url' => 'https://instagram.com/johndoe',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame('https://instagram.com/johndoe', $qrCode->getEncodedContent());
+    }
+
+    public function test_get_card_display_url_for_static_url(): void
+    {
+        $qrCode = QrCode::factory()->make([
+            'type' => QrCodeType::Url,
+            'is_dynamic' => false,
+            'content_data' => ['url' => 'https://example.com'],
+        ]);
+
+        $this->assertSame('https://example.com', $qrCode->getCardDisplayUrl());
+    }
+
+    public function test_get_card_display_url_for_dynamic_url_uses_short_link(): void
+    {
+        $qrCode = QrCode::factory()->create([
+            'type' => QrCodeType::Url,
+            'is_dynamic' => true,
+            'content_data' => ['url' => 'https://example.com'],
+        ]);
+
+        ShortLink::factory()->create([
+            'qr_code_id' => $qrCode->id,
+            'slug' => 'abc1234',
+            'destination_url' => 'https://example.com',
+        ]);
+
+        $qrCode->load('shortLink');
+
+        $this->assertSame(
+            config('app.proxy_scheme', 'https') . '://' . config('app.proxy_domain') . '/abc1234',
+            $qrCode->getCardDisplayUrl()
+        );
+    }
+
+    public function test_get_card_display_url_for_vcard_shows_preview(): void
+    {
+        $qrCode = QrCode::factory()->make([
+            'type' => QrCodeType::VCard,
+            'is_dynamic' => false,
+            'content_data' => [
+                'first_name' => 'Jane',
+                'last_name' => 'Smith',
+                'org' => 'Acme Corp',
+                'title' => 'Product Manager',
+                'email' => 'jane.smith@acme.com',
+            ],
+        ]);
+
+        $this->assertSame(
+            'Jane Smith · Product Manager · Acme Corp · jane.smith@acme.com',
+            $qrCode->getCardDisplayUrl()
+        );
+    }
+
+    public function test_get_content_fields_for_vcard(): void
+    {
+        $qrCode = QrCode::factory()->make([
+            'type' => QrCodeType::VCard,
+            'is_dynamic' => false,
+            'content_data' => [
+                'first_name' => 'Jane',
+                'last_name' => 'Smith',
+                'email' => 'jane.smith@acme.com',
+            ],
+        ]);
+
+        $fields = $qrCode->getContentFields();
+
+        $this->assertSame('Jane', $fields[0]['value']);
+        $this->assertSame('Smith', $fields[1]['value']);
+        $this->assertSame('jane.smith@acme.com', $fields[2]['value']);
+    }
+
+    public function test_get_card_copy_value_for_vcard_uses_encoded_content(): void
+    {
+        $qrCode = QrCode::factory()->make([
+            'type' => QrCodeType::VCard,
+            'is_dynamic' => false,
+            'content_data' => [
+                'first_name' => 'Jane',
+                'last_name' => 'Smith',
+            ],
+        ]);
+
+        $this->assertStringContainsString('BEGIN:VCARD', $qrCode->getCardCopyValue());
+        $this->assertStringContainsString('Jane', $qrCode->getCardCopyValue());
+    }
 }

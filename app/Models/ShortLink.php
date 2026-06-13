@@ -15,6 +15,7 @@ class ShortLink extends Model
         'qr_code_id',
         'domain',
         'slug',
+        'link_type',
         'destination_url',
         'rules',
         'password_hash',
@@ -48,12 +49,12 @@ class ShortLink extends Model
         return $this->hasMany(ScanAggregate::class);
     }
 
-    public static function generateSlug(int $length = null): string
+    public static function generateSlug(): string
     {
-        $length ??= config('qrcode.slug_length', 7);
+        $length = config('qrcode.slug_length', 7);
 
         do {
-            $slug = Str::random($length);
+            $slug = substr(hash('sha256', (string) Str::uuid()), 0, $length);
         } while (static::where('slug', $slug)->exists());
 
         return $slug;

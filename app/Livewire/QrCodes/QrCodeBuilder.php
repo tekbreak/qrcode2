@@ -2,7 +2,6 @@
 
 namespace App\Livewire\QrCodes;
 
-use App\Enums\Feature;
 use App\Enums\QrCodeType;
 use App\Models\QrCode;
 use App\Models\ShortLink;
@@ -73,12 +72,16 @@ class QrCodeBuilder extends Component
     public string $cryptoAmount = '';
     // Social / AppStore / Menu
     public string $socialUrl = '';
+    // Social multi-network
+    public array $socialNetworks = [];
+    public string $addingPlatform = '';
+    public string $addingIdentifier = '';
+    public bool $showStaticDowngradeWarning = false;
     // PDF
     public $pdfFile = null;
     public ?string $existingFileUrl = null;
 
-    // Link features
-    public string $customSlug = '';
+    // Link features (slug is always auto-generated)
     public ?string $expiresAt = null;
     public ?int $maxScans = null;
     public string $linkPassword = '';
@@ -99,6 +102,7 @@ class QrCodeBuilder extends Component
     public $logo = null;
     public ?string $existingLogo = null;
     public ?string $selectedIcon = null;
+    public bool $logoMatchFgColor = false;
 
     // Preview
     public ?string $preview = null;
@@ -108,10 +112,254 @@ class QrCodeBuilder extends Component
         $this->type = $value;
     }
 
+    public static function socialPlatforms(): array
+    {
+        return [
+            'instagram' => [
+                'label'        => 'Instagram',
+                'url_template' => 'https://instagram.com/{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-instagram',
+                'style'        => 'background:linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)',
+                'icon_color'   => 'text-white',
+            ],
+            'facebook' => [
+                'label'        => 'Facebook',
+                'url_template' => 'https://facebook.com/{id}',
+                'placeholder'  => 'username or page',
+                'icon'         => 'fa-brands fa-facebook-f',
+                'style'        => 'background-color:#1877F2',
+                'icon_color'   => 'text-white',
+            ],
+            'tiktok' => [
+                'label'        => 'TikTok',
+                'url_template' => 'https://tiktok.com/@{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-tiktok',
+                'style'        => 'background-color:#010101',
+                'icon_color'   => 'text-white',
+            ],
+            'x' => [
+                'label'        => 'X / Twitter',
+                'url_template' => 'https://x.com/{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-x-twitter',
+                'style'        => 'background-color:#000000',
+                'icon_color'   => 'text-white',
+            ],
+            'linkedin' => [
+                'label'        => 'LinkedIn',
+                'url_template' => 'https://linkedin.com/in/{id}',
+                'placeholder'  => 'profile slug',
+                'icon'         => 'fa-brands fa-linkedin-in',
+                'style'        => 'background-color:#0A66C2',
+                'icon_color'   => 'text-white',
+            ],
+            'youtube' => [
+                'label'        => 'YouTube',
+                'url_template' => 'https://youtube.com/@{id}',
+                'placeholder'  => 'channel handle',
+                'icon'         => 'fa-brands fa-youtube',
+                'style'        => 'background-color:#FF0000',
+                'icon_color'   => 'text-white',
+            ],
+            'pinterest' => [
+                'label'        => 'Pinterest',
+                'url_template' => 'https://pinterest.com/{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-pinterest-p',
+                'style'        => 'background-color:#E60023',
+                'icon_color'   => 'text-white',
+            ],
+            'snapchat' => [
+                'label'        => 'Snapchat',
+                'url_template' => 'https://snapchat.com/add/{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-snapchat',
+                'style'        => 'background-color:#FFFC00',
+                'icon_color'   => 'text-gray-900',
+            ],
+            'whatsapp' => [
+                'label'        => 'WhatsApp',
+                'url_template' => 'https://wa.me/{id}',
+                'placeholder'  => '+1234567890',
+                'icon'         => 'fa-brands fa-whatsapp',
+                'style'        => 'background-color:#25D366',
+                'icon_color'   => 'text-white',
+            ],
+            'telegram' => [
+                'label'        => 'Telegram',
+                'url_template' => 'https://t.me/{id}',
+                'placeholder'  => 'username',
+                'icon'         => 'fa-brands fa-telegram',
+                'style'        => 'background-color:#26A5E4',
+                'icon_color'   => 'text-white',
+            ],
+            'custom' => [
+                'label'        => 'Custom URL',
+                'url_template' => '{id}',
+                'placeholder'  => 'https://example.com/...',
+                'icon'         => 'fa-solid fa-link',
+                'style'        => 'background-color:#6B7280',
+                'icon_color'   => 'text-white',
+            ],
+        ];
+    }
+
+    public function getSocialPlatformsConfigProperty(): array
+    {
+        return static::socialPlatforms();
+    }
+
+    public static function assembleSocialUrlFor(string $platform, string $identifier): string
+    {
+        $platforms = static::socialPlatforms();
+        $config    = $platforms[$platform] ?? null;
+
+        if (! $config || $identifier === '') {
+            return '';
+        }
+
+        if ($platform === 'custom') {
+            return $identifier;
+        }
+
+        $id = ltrim(trim($identifier), '@');
+
+        return str_replace('{id}', $id, $config['url_template']);
+    }
+
+    public function getAddingUrlPreviewProperty(): string
+    {
+        return static::assembleSocialUrlFor($this->addingPlatform, $this->addingIdentifier);
+    }
+
+    public function selectAddingPlatform(string $platform): void
+    {
+        if ($this->addingPlatform !== $platform) {
+            $this->addingIdentifier = '';
+        }
+        $this->addingPlatform = $platform;
+        $this->syncStateToUrl();
+    }
+
+    public function updatedAddingIdentifier(): void
+    {
+        $this->syncStateToUrl();
+    }
+
+    public function addSocialNetwork(): void
+    {
+        if (! $this->isDynamic && count($this->socialNetworks) >= 1) {
+            return;
+        }
+
+        $this->validate($this->getAddingSocialValidationRules());
+
+        $this->socialNetworks[] = [
+            'platform'   => $this->addingPlatform,
+            'identifier' => $this->addingIdentifier,
+            'url'        => static::assembleSocialUrlFor($this->addingPlatform, $this->addingIdentifier),
+        ];
+
+        $this->addingPlatform   = '';
+        $this->addingIdentifier = '';
+        $this->syncStateToUrl();
+        $this->refreshPreview();
+    }
+
+    public function removeSocialNetwork(int $index): void
+    {
+        if (! isset($this->socialNetworks[$index])) {
+            return;
+        }
+
+        array_splice($this->socialNetworks, $index, 1);
+        $this->socialNetworks = array_values($this->socialNetworks);
+        $this->syncStateToUrl();
+        $this->refreshPreview();
+    }
+
+    protected function getAddingSocialValidationRules(): array
+    {
+        if (! $this->addingPlatform) {
+            return ['addingPlatform' => 'required|string'];
+        }
+
+        if ($this->addingPlatform === 'custom') {
+            return ['addingIdentifier' => 'required|url:http,https'];
+        }
+
+        return ['addingIdentifier' => 'required|string|min:1'];
+    }
+
+    protected function ensureSocialNetworkAdded(): void
+    {
+        if ($this->type !== 'social' || ! empty($this->socialNetworks)) {
+            return;
+        }
+
+        if (! $this->addingPlatform || ! $this->addingIdentifier) {
+            return;
+        }
+
+        $url = static::assembleSocialUrlFor($this->addingPlatform, $this->addingIdentifier);
+        if ($url === '') {
+            return;
+        }
+
+        $this->socialNetworks[] = [
+            'platform'   => $this->addingPlatform,
+            'identifier' => $this->addingIdentifier,
+            'url'        => $url,
+        ];
+
+        $this->addingPlatform   = '';
+        $this->addingIdentifier = '';
+    }
+
+    protected function getSocialNetworksForSave(): array
+    {
+        $networks = $this->socialNetworks;
+
+        if (! $this->isDynamic) {
+            $networks = array_slice($networks, 0, 1);
+        }
+
+        return $networks;
+    }
+
+    public function updatedIsDynamic(bool $value): void
+    {
+        if ($value || $this->type !== 'social' || count($this->socialNetworks) <= 1) {
+            return;
+        }
+
+        $this->isDynamic = true;
+        $this->showStaticDowngradeWarning = true;
+    }
+
+    public function confirmStaticDowngrade(): void
+    {
+        $this->socialNetworks = array_slice($this->socialNetworks, 0, 1);
+        $this->isDynamic = false;
+        $this->showStaticDowngradeWarning = false;
+        $this->syncStateToUrl();
+        $this->refreshPreview();
+    }
+
+    public function cancelStaticDowngrade(): void
+    {
+        $this->showStaticDowngradeWarning = false;
+    }
+
     public function selectIcon(?string $icon): void
     {
         $this->selectedIcon = $icon;
         $this->logo = null;
+        if (! $icon) {
+            $this->logoMatchFgColor = false;
+        }
         $this->refreshPreview();
     }
 
@@ -192,7 +440,10 @@ class QrCodeBuilder extends Component
             'cryptoAddress' => $this->cryptoAddress,
             'cryptoAmount' => $this->cryptoAmount,
             'socialUrl' => $truncate($this->socialUrl, 800),
-            'customSlug' => $this->customSlug,
+            'socialNetworks' => $this->socialNetworks,
+            'addingPlatform' => $this->addingPlatform,
+            'addingIdentifier' => $truncate($this->addingIdentifier, 300),
+            'isDynamic' => $this->isDynamic,
             'expiresAt' => $this->expiresAt,
             'maxScans' => $this->maxScans,
             'linkPassword' => $this->linkPassword,
@@ -209,6 +460,7 @@ class QrCodeBuilder extends Component
             'frameStyle' => $this->frameStyle,
             'frameText' => $this->frameText,
             'selectedIcon' => $this->selectedIcon,
+            'logoMatchFgColor' => $this->logoMatchFgColor,
             'existingFileUrl' => $this->existingFileUrl,
             'existingLogo' => $this->existingLogo,
         ];
@@ -261,7 +513,19 @@ class QrCodeBuilder extends Component
             $this->cryptoAddress = $payload['cryptoAddress'] ?? '';
             $this->cryptoAmount = $payload['cryptoAmount'] ?? '';
             $this->socialUrl = $payload['socialUrl'] ?? '';
-            $this->customSlug = $payload['customSlug'] ?? '';
+            $this->socialNetworks = $payload['socialNetworks'] ?? [];
+            $this->addingPlatform = $payload['addingPlatform'] ?? '';
+            $this->addingIdentifier = $payload['addingIdentifier'] ?? '';
+            if (empty($this->socialNetworks) && (($payload['socialPlatform'] ?? '') !== '' || ($payload['socialIdentifier'] ?? '') !== '')) {
+                $platform = $payload['socialPlatform'] ?? 'custom';
+                $identifier = $payload['socialIdentifier'] ?? ($payload['socialUrl'] ?? '');
+                $this->socialNetworks = [[
+                    'platform' => $platform,
+                    'identifier' => $identifier,
+                    'url' => $payload['socialUrl'] ?? static::assembleSocialUrlFor($platform, $identifier),
+                ]];
+            }
+            $this->isDynamic = (bool) ($payload['isDynamic'] ?? false);
             $this->expiresAt = $payload['expiresAt'] ?? null;
             $this->maxScans = isset($payload['maxScans']) ? (int) $payload['maxScans'] : null;
             $this->linkPassword = $payload['linkPassword'] ?? '';
@@ -281,6 +545,7 @@ class QrCodeBuilder extends Component
             $this->frameStyle = $payload['frameStyle'] ?? '';
             $this->frameText = $payload['frameText'] ?? '';
             $this->selectedIcon = $payload['selectedIcon'] ?? null;
+            $this->logoMatchFgColor = (bool) ($payload['logoMatchFgColor'] ?? false);
             $this->existingFileUrl = $payload['existingFileUrl'] ?? null;
             $this->existingLogo = $payload['existingLogo'] ?? null;
 
@@ -325,11 +590,12 @@ class QrCodeBuilder extends Component
             QrCodeType::Email => $this->fillEmail($data),
             QrCodeType::Phone => $this->phone = $data['phone'] ?? '',
             QrCodeType::Sms => $this->fillSms($data),
+            QrCodeType::Social => $this->fillSocial($data),
+            QrCodeType::AppStore, QrCodeType::Menu => $this->socialUrl = $data['url'] ?? '',
             default => null,
         };
 
         if ($shortLink = $qrCode->shortLink) {
-            $this->customSlug = $shortLink->slug;
             $this->expiresAt = $shortLink->expires_at?->format('Y-m-d\TH:i');
             $this->maxScans = $shortLink->max_scans;
         }
@@ -347,6 +613,7 @@ class QrCodeBuilder extends Component
             $this->selectedIcon = str_starts_with($design->logo_path ?? '', 'icons/')
                 ? pathinfo($design->logo_path, PATHINFO_FILENAME)
                 : null;
+            $this->logoMatchFgColor = (bool) $design->logo_match_fg_color;
             if ($design->gradient) {
                 $this->useGradient = true;
                 $this->gradientColor1 = $design->gradient['color1'] ?? '#000000';
@@ -389,6 +656,25 @@ class QrCodeBuilder extends Component
         $this->smsMessage = $d['message'] ?? '';
     }
 
+    protected function fillSocial(array $d): void
+    {
+        if (isset($d['networks'])) {
+            $this->socialNetworks = $d['networks'];
+        } elseif (isset($d['platform'])) {
+            $this->socialNetworks = [[
+                'platform'   => $d['platform'],
+                'identifier' => $d['identifier'] ?? '',
+                'url'        => $d['url'] ?? static::assembleSocialUrlFor($d['platform'], $d['identifier'] ?? ''),
+            ]];
+        } else {
+            $this->socialNetworks = [[
+                'platform'   => 'custom',
+                'identifier' => $d['url'] ?? '',
+                'url'        => $d['url'] ?? '',
+            ]];
+        }
+    }
+
     public function nextStep(): void
     {
         $this->validateStep();
@@ -420,6 +706,10 @@ class QrCodeBuilder extends Component
 
     protected function validateContentByType(): void
     {
+        if ($this->type === 'social') {
+            $this->ensureSocialNetworkAdded();
+        }
+
         $rules = match (QrCodeType::from($this->type)) {
             QrCodeType::Url => ['url' => 'required|url:http,https'],
             QrCodeType::Text => ['text' => 'required|string|max:2000'],
@@ -431,12 +721,22 @@ class QrCodeBuilder extends Component
             QrCodeType::Geo => ['latitude' => 'required|numeric', 'longitude' => 'required|numeric'],
             QrCodeType::Event => ['eventTitle' => 'required|string', 'eventStart' => 'required|string'],
             QrCodeType::Crypto => ['cryptoAddress' => 'required|string'],
-            QrCodeType::AppStore, QrCodeType::Social, QrCodeType::Menu => ['socialUrl' => 'required|url:http,https'],
+            QrCodeType::Social => $this->getSocialValidationRules(),
+            QrCodeType::AppStore, QrCodeType::Menu => ['socialUrl' => 'required|url:http,https'],
             QrCodeType::Pdf => $this->editing ? [] : ['pdfFile' => 'required|file|max:10240'],
             default => [],
         };
 
         $this->validate($rules);
+    }
+
+    protected function getSocialValidationRules(): array
+    {
+        if (! empty($this->socialNetworks)) {
+            return ['socialNetworks' => 'required|array|min:1'];
+        }
+
+        return $this->getAddingSocialValidationRules();
     }
 
     protected function getContentData(): array
@@ -469,7 +769,10 @@ class QrCodeBuilder extends Component
                 'currency' => $this->cryptoCurrency, 'address' => $this->cryptoAddress,
                 'amount' => $this->cryptoAmount,
             ],
-            QrCodeType::AppStore, QrCodeType::Social, QrCodeType::Menu => ['url' => $this->socialUrl],
+            QrCodeType::Social => [
+                'networks' => $this->getSocialNetworksForSave(),
+            ],
+            QrCodeType::AppStore, QrCodeType::Menu => ['url' => $this->socialUrl],
             QrCodeType::Pdf => ['file_url' => $this->existingFileUrl ?? ''],
             default => [],
         };
@@ -483,15 +786,64 @@ class QrCodeBuilder extends Component
         }
     }
 
+    public function applyColorPreset(string $fg, string $bg, ?string $gradient1 = null, ?string $gradient2 = null, bool $useGradient = false): void
+    {
+        $this->bgColor = $bg;
+        $this->useGradient = $useGradient;
+
+        if ($useGradient && $gradient1 && $gradient2) {
+            $this->gradientColor1 = $gradient1;
+            $this->gradientColor2 = $gradient2;
+            $this->fgColor = $gradient1;
+        } else {
+            $this->fgColor = $fg;
+            $this->gradientColor1 = $fg;
+        }
+
+        $this->refreshPreview();
+    }
+
+    public function setForegroundMode(string $mode): void
+    {
+        $useGradient = $mode === 'gradient';
+
+        if ($useGradient === $this->useGradient) {
+            return;
+        }
+
+        if ($useGradient) {
+            $this->gradientColor1 = $this->fgColor;
+            if ($this->gradientColor1 === $this->gradientColor2) {
+                $this->gradientColor2 = '#333333';
+            }
+        } else {
+            $this->fgColor = $this->gradientColor1;
+        }
+
+        $this->useGradient = $useGradient;
+        $this->refreshPreview();
+    }
+
     public function updatedFgColor(): void { $this->refreshPreview(); }
     public function updatedBgColor(): void { $this->refreshPreview(); }
-    public function updatedUseGradient(): void { $this->refreshPreview(); }
+    public function updatedUseGradient(): void
+    {
+        if ($this->useGradient) {
+            $this->gradientColor1 = $this->fgColor;
+        } else {
+            $this->fgColor = $this->gradientColor1;
+        }
+
+        $this->refreshPreview();
+    }
     public function updatedGradientColor1(): void { $this->refreshPreview(); }
     public function updatedGradientColor2(): void { $this->refreshPreview(); }
     public function updatedGradientType(): void { $this->refreshPreview(); }
+    public function updatedLogoMatchFgColor(): void { $this->refreshPreview(); }
     public function updatedLogo(): void
     {
         $this->selectedIcon = null;
+        $this->logoMatchFgColor = false;
         $this->refreshPreview();
     }
     public function updatedFrameText(): void { $this->refreshPreview(); }
@@ -511,7 +863,10 @@ class QrCodeBuilder extends Component
             if ($this->logo && method_exists($this->logo, 'getRealPath')) {
                 $logoPath = $this->logo->getRealPath();
             } elseif ($this->selectedIcon) {
-                $logoPath = 'icons/qr-center-icons/' . $this->selectedIcon . '.svg';
+                $iconFile = public_path('icons/qr-center-icons/' . $this->selectedIcon . '.svg');
+                if (file_exists($iconFile)) {
+                    $logoPath = 'icons/qr-center-icons/' . $this->selectedIcon . '.svg';
+                }
             } elseif ($this->existingLogo) {
                 $logoPath = $this->existingLogo;
             }
@@ -536,6 +891,7 @@ class QrCodeBuilder extends Component
                     'type' => $this->gradientType,
                 ] : null,
                 'logo_path' => $logoPath,
+                'logo_match_fg_color' => $this->selectedIcon && $this->logoMatchFgColor,
             ]));
 
             $generator = app(QrCodeGeneratorService::class);
@@ -561,25 +917,20 @@ class QrCodeBuilder extends Component
             return;
         }
 
-        if ($this->editing && $isDynamicCapable && ! $this->qrCode->shortLink) {
-            if (! $user->canCreateQrCode(isDynamic: true)) {
-                $this->addError('name', __('qr.dynamic_plan_limit_reached'));
+        // Check dynamic QR plan limit for first-time activation (new or upgrading static→dynamic)
+        $isFirstDynamicActivation =
+            (! $this->editing && $this->isDynamic && $isDynamicCapable) ||
+            ($this->editing && $isDynamicCapable && $this->isDynamic && ! $this->qrCode->shortLink);
 
-                return;
-            }
-        }
-
-        if ($this->customSlug && ShortLink::where('slug', $this->customSlug)
-            ->when($this->qrCode?->shortLink, fn ($q) => $q->where('id', '!=', $this->qrCode->shortLink->id))
-            ->exists()) {
-            $this->addError('customSlug', 'This slug is already taken.');
+        if ($isFirstDynamicActivation && ! $user->canCreateQrCode(isDynamic: true)) {
+            $this->addError('name', __('qr.dynamic_plan_limit_reached'));
 
             return;
         }
 
         $pendingData = $this->buildPendingData();
 
-        if ($this->editing && $isDynamicCapable && $this->qrCode->shortLink) {
+        if ($this->editing && $isDynamicCapable && $this->isDynamic && $this->qrCode->shortLink) {
             $actionType = $paidActionService->detectActionType($this->qrCode, $pendingData);
 
             if ($actionType && $paidActionService->requiresPayment($user, $this->qrCode, $pendingData)) {
@@ -609,13 +960,26 @@ class QrCodeBuilder extends Component
         }
 
         $contentData = $this->getContentData();
+        $networks = $contentData['networks'] ?? [];
+        $linkType = 'redirect';
+        $destinationUrl = $contentData['url'] ?? $contentData['file_url'] ?? '';
+
+        if ($this->type === 'social') {
+            if (! $this->isDynamic) {
+                $networks = array_slice($networks, 0, 1);
+            }
+            $isSocialHub = $this->isDynamic && count($networks) > 1;
+            $linkType = $isSocialHub ? 'social_hub' : 'redirect';
+            $destinationUrl = $isSocialHub ? '' : ($networks[0]['url'] ?? '');
+            $contentData['networks'] = $networks;
+        }
 
         return [
             'name' => $this->name,
             'type' => $this->type,
             'content_data' => $contentData,
-            'destination_url' => $contentData['url'] ?? '',
-            'custom_slug' => $this->customSlug ?: null,
+            'destination_url' => $destinationUrl,
+            'link_type' => $linkType,
             'link_password' => $this->linkPassword,
             'expires_at' => $this->expiresAt,
             'max_scans' => $this->maxScans,
@@ -635,6 +999,7 @@ class QrCodeBuilder extends Component
                     'type' => $this->gradientType,
                 ] : null,
                 'logo_path' => $logoPath,
+                'logo_match_fg_color' => $this->selectedIcon && $this->logoMatchFgColor,
             ],
         ];
     }
@@ -644,13 +1009,14 @@ class QrCodeBuilder extends Component
         $user = auth()->user();
         $qrType = QrCodeType::from($this->type);
         $isDynamicCapable = $qrType->isDynamic();
+        $makeDynamic = $isDynamicCapable && $this->isDynamic;
 
         $qrData = [
             'user_id' => $user->id,
             'team_id' => $user->current_team_id,
             'name' => $pendingData['name'],
             'type' => $pendingData['type'],
-            'is_dynamic' => $this->editing && $isDynamicCapable ? true : false,
+            'is_dynamic' => $makeDynamic,
             'content_data' => $pendingData['content_data'],
         ];
 
@@ -666,12 +1032,14 @@ class QrCodeBuilder extends Component
             $pendingData['design']
         );
 
-        if ($this->editing && $isDynamicCapable) {
+        if ($makeDynamic) {
             $destinationUrl = $pendingData['destination_url'];
+            $linkType = $pendingData['link_type'] ?? 'redirect';
 
             if ($qr->shortLink) {
                 $update = [
                     'destination_url' => $destinationUrl,
+                    'link_type' => $linkType,
                     'expires_at' => $pendingData['expires_at'] ? \Carbon\Carbon::parse($pendingData['expires_at']) : $qr->shortLink->expires_at,
                     'max_scans' => $pendingData['max_scans'],
                 ];
@@ -684,7 +1052,8 @@ class QrCodeBuilder extends Component
             } else {
                 ShortLink::create([
                     'qr_code_id' => $qr->id,
-                    'slug' => $pendingData['custom_slug'] ?: ShortLink::generateSlug(),
+                    'slug' => ShortLink::generateSlug(),
+                    'link_type' => $linkType,
                     'destination_url' => $destinationUrl,
                     'password_hash' => $pendingData['link_password'] ? bcrypt($pendingData['link_password']) : null,
                     'expires_at' => $pendingData['expires_at'] ? \Carbon\Carbon::parse($pendingData['expires_at']) : null,
@@ -693,11 +1062,6 @@ class QrCodeBuilder extends Component
                 ]);
             }
         }
-    }
-
-    public function canUseFullCustomization(): bool
-    {
-        return auth()->user()->hasFeature(Feature::FullCustomization);
     }
 
     public function downloadPng()

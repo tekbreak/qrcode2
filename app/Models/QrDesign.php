@@ -19,6 +19,7 @@ class QrDesign extends Model
         'frame_style',
         'frame_text',
         'logo_path',
+        'logo_match_fg_color',
         'template_id',
     ];
 
@@ -26,6 +27,7 @@ class QrDesign extends Model
     {
         return [
             'gradient' => 'array',
+            'logo_match_fg_color' => 'boolean',
         ];
     }
 

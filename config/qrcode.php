@@ -3,6 +3,8 @@
 return [
     'enabled_languages' => ['en', 'es'],
 
+    'generator_engine' => env('QR_GENERATOR_ENGINE', 'v1'),
+
     'proxy_scheme' => env('PROXY_SCHEME', 'https'),
 
     'paid_action_price_cents' => 100,

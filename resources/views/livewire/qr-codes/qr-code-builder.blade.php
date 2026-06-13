@@ -1,4 +1,8 @@
-<div class="mx-auto max-w-4xl">
+<div @class([
+    'mx-auto',
+    'max-w-6xl' => $step === 2 && config('qrcode.generator_engine') === 'v2',
+    'max-w-4xl' => ! ($step === 2 && config('qrcode.generator_engine') === 'v2'),
+])>
     <div class="mb-8">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ $editing ? __('qr.edit') : __('qr.create') }}</h1>
     </div>
@@ -252,7 +256,9 @@
                             <input wire:model.live.debounce.500ms="cryptoAmount" type="text" class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
                         </div>
                     </div>
-                @elseif(in_array($type, ['app_store', 'social', 'menu']))
+                @elseif($type === 'social')
+                    @include('livewire.qr-codes._social-platform-picker')
+                @elseif(in_array($type, ['app_store', 'menu']))
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">URL</label>
                         <input wire:model.live.debounce.500ms="socialUrl" type="url" placeholder="https://" class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
@@ -271,71 +277,78 @@
                 @endif
                     </div>
 
-                    {{-- Dynamic type info --}}
-                    @if(\App\Enums\QrCodeType::from($type)->isDynamic())
-                    <div class="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-                        <i class="fa-solid fa-circle-info text-blue-500 mt-0.5"></i>
-                        <div class="text-sm text-blue-800 dark:text-blue-200">
-                            <span class="font-semibold">This is a dynamic QR code.</span>
-                            It includes scan tracking, analytics, password protection, and the ability to change its destination anytime.
-                            @if(auth()->user()->hasFreeDynamicEdits())
-                            <span class="block mt-1 text-blue-600 dark:text-blue-300 font-medium">
-                                <i class="fa-solid fa-infinity mr-0.5"></i> Unlimited edits included with your Enterprise plan.
-                            </span>
-                            @else
-                            <span class="block mt-1">
-                                First activation is included in your plan. Subsequent edits (URL, password, expiry, scan limits) cost
-                                <span class="font-semibold">€1</span> each via one-time payment.
-                            </span>
+                    {{-- Dynamic QR section --}}
+                    @php $isDynamicType = \App\Enums\QrCodeType::from($type)->isDynamic(); @endphp
+                    @if($isDynamicType)
+                    <div class="rounded-lg border border-gray-200 dark:border-zinc-700 p-4 space-y-3">
+                        {{-- Toggle --}}
+                        <label @class(['flex items-start gap-3', 'cursor-not-allowed opacity-75' => $editing && $qrCode?->shortLink, 'cursor-pointer' => !($editing && $qrCode?->shortLink)])>
+                            <input wire:model.live="isDynamic" type="checkbox"
+                                   @if($editing && $qrCode?->shortLink) disabled @endif
+                                   class="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-zinc-600 text-primary-600 focus:ring-primary-500 shrink-0">
+                            <div>
+                                <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">Make this a Dynamic QR Code</span>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    Includes scan tracking, analytics, password protection, and the ability to change its destination anytime.
+                                </p>
+                            </div>
+                        </label>
+
+                        @if($isDynamic)
+                        <div class="space-y-3 border-t border-gray-100 dark:border-zinc-800 pt-3">
+                            {{-- Plan limit warning when creating and over limit --}}
+                            @if(!$editing && !auth()->user()->canCreateQrCode(isDynamic: true))
+                            <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-3">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5 text-sm shrink-0"></i>
+                                <p class="text-sm text-amber-800 dark:text-amber-200">
+                                    You've reached your plan's dynamic QR code limit.
+                                    Creating additional dynamic QR codes costs <span class="font-bold">€1</span> each.
+                                </p>
+                            </div>
                             @endif
-                        </div>
-                    </div>
-                    @endif
 
-                    {{-- Link settings (editing a dynamic-capable type only) --}}
-                    @if($editing && \App\Enums\QrCodeType::from($type)->isDynamic())
-                    <div class="rounded-lg border border-gray-200 dark:border-zinc-800 p-4 space-y-4">
-                        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                            <i class="fa-solid fa-link text-gray-400 dark:text-gray-500 mr-1"></i>
-                            Link Settings
-                        </h4>
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            <div>
-                                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Custom Slug (optional)</label>
-                                <div class="mt-1 flex items-center gap-1">
-                                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ config('app.proxy_domain') }}/</span>
-                                    <input wire:model.live.debounce.500ms="customSlug" type="text" placeholder="my-link" maxlength="50"
-                                           class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
+                            {{-- Enterprise: unlimited edits --}}
+                            @if(auth()->user()->hasFreeDynamicEdits())
+                            <p class="flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                <i class="fa-solid fa-infinity"></i>
+                                Unlimited edits included with your Enterprise plan.
+                            </p>
+                            @elseif($editing && $qrCode?->shortLink)
+                            {{-- Existing dynamic QR — subsequent edits cost €1 --}}
+                            <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-3">
+                                <i class="fa-solid fa-euro-sign text-amber-500 mt-0.5 text-sm shrink-0"></i>
+                                <p class="text-sm text-amber-800 dark:text-amber-200">
+                                    Changing the destination URL, password, expiration, or scan limits costs
+                                    <span class="font-bold">€1</span> per save. You will be redirected to Stripe to complete payment.
+                                </p>
+                            </div>
+                            @else
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                First activation is included in your plan. Subsequent edits cost €1 each.
+                            </p>
+                            @endif
+
+                            {{-- Link options --}}
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Password Protection <span class="font-normal text-gray-400">(optional)</span></label>
+                                    <input wire:model.live.debounce.500ms="linkPassword" type="text" placeholder="Leave empty for no password"
+                                           class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
                                 </div>
-                                @error('customSlug') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Password Protection (optional)</label>
-                                <input wire:model.live.debounce.500ms="linkPassword" type="text" placeholder="Leave empty for no password"
-                                       class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Expiration Date (optional)</label>
-                                <input wire:model.live="expiresAt" type="datetime-local"
-                                       class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Max Scans (optional)</label>
-                                <input wire:model.live="maxScans" type="number" min="1" placeholder="Unlimited"
-                                       class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiration Date <span class="font-normal text-gray-400">(optional)</span></label>
+                                    <input wire:model.live="expiresAt" type="datetime-local"
+                                           class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">Max Scans <span class="font-normal text-gray-400">(optional)</span></label>
+                                    <input wire:model.live="maxScans" type="number" min="1" placeholder="Unlimited"
+                                           class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm">
+                                </div>
                             </div>
                         </div>
+                        @endif
                     </div>
-
-                    @if($editing && $qrCode?->shortLink && !auth()->user()->hasFreeDynamicEdits())
-                    <div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
-                        <i class="fa-solid fa-euro-sign text-amber-500 mt-0.5"></i>
-                        <div class="text-sm text-amber-800 dark:text-amber-200">
-                            Changing the destination URL, password, expiration, or scan limits costs
-                            <span class="font-bold">€1</span> per save. You will be redirected to Stripe to complete payment.
-                        </div>
-                    </div>
-                    @endif
                     @endif
                 </div>
             </div>
@@ -359,230 +372,7 @@
 
         {{-- Step 2: Design --}}
         @if($step === 2)
-        <div class="flex flex-col gap-8">
-            <div class="flex flex-col gap-8 lg:flex-row">
-                {{-- Design controls (left) --}}
-                <div class="flex-1 space-y-6">
-                <div class="grid gap-6 sm:grid-cols-2">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.fg_color') }}</label>
-                        <div class="mt-1 flex items-center gap-2">
-                            <input wire:model.live.debounce.300ms="fgColor" type="color" class="h-10 w-14 cursor-pointer rounded border-gray-300 dark:border-zinc-700">
-                            <input wire:model.live.debounce.500ms="fgColor" type="text" class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm" maxlength="7">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.bg_color') }}</label>
-                        <div class="mt-1 flex items-center gap-2">
-                            <input wire:model.live.debounce.300ms="bgColor" type="color" class="h-10 w-14 cursor-pointer rounded border-gray-300 dark:border-zinc-700">
-                            <input wire:model.live.debounce.500ms="bgColor" type="text" class="block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm" maxlength="7">
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Gradient --}}
-                <div class="rounded-lg border border-gray-200 dark:border-zinc-800 p-4">
-                    <label class="flex items-center gap-3">
-                        <input wire:model.live="useGradient" type="checkbox" class="h-4 w-4 rounded border-gray-300 dark:border-zinc-700 text-primary-600">
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Use Gradient</span>
-                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Premium</span>
-                    </label>
-                    @if($useGradient)
-                    <div class="mt-4 grid gap-4 sm:grid-cols-3">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Color 1</label>
-                            <input wire:model.live.debounce.300ms="gradientColor1" type="color" class="mt-1 h-8 w-full cursor-pointer rounded">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Color 2</label>
-                            <input wire:model.live.debounce.300ms="gradientColor2" type="color" class="mt-1 h-8 w-full cursor-pointer rounded">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Direction</label>
-                            <select wire:change="setDesign('gradientType', $event.target.value)" class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 text-sm">
-                                <option value="linear" @selected($gradientType === 'linear')>Linear</option>
-                                <option value="radial" @selected($gradientType === 'radial')>Radial</option>
-                            </select>
-                        </div>
-                    </div>
-                    @endif
-                </div>
-
-                {{-- Shape customization (Body, Eye Frame, Eye Ball) --}}
-                <div class="rounded-xl border border-gray-200 dark:border-zinc-800 bg-slate-50/80 p-3 sm:p-4">
-                    <div class="space-y-4">
-                        {{-- Body Shape (data modules) --}}
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Body Shape</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">Shape of the data modules</p>
-                            <div class="mt-2 flex flex-wrap gap-1">
-                                @foreach(config('qr_shapes.body') as $style => $config)
-                                <button wire:click="setDesign('dotStyle', '{{ $style }}')" type="button"
-                                        title="{{ $config['label'] }}"
-                                        class="flex h-6 w-6 shrink-0 items-center justify-center rounded border bg-white dark:bg-zinc-900 shadow-sm transition-colors hover:border-gray-300 dark:border-zinc-700 {{ $dotStyle === $style ? 'border-primary-500 bg-primary-50 dark:bg-primary-950/50 ring-1 ring-primary-200 dark:ring-primary-800' : 'border-gray-200 dark:border-zinc-800' }}">
-                                    <x-qr-shape-icon shape="{{ $config['svg'] }}" :size="14" />
-                                </button>
-                                @endforeach
-                            </div>
-                        </div>
-
-                        {{-- Eye Frame Shape (outer corner squares) --}}
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Eye Frame Shape</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">Outer shape of the corner finder patterns</p>
-                            <div class="mt-2 flex flex-wrap gap-1">
-                                @foreach(config('qr_shapes.eye_frame') as $style => $config)
-                                <button wire:click="setDesign('eyeFrameStyle', '{{ $style }}')" type="button"
-                                        title="{{ $config['label'] }}"
-                                        class="flex h-6 w-6 shrink-0 items-center justify-center rounded border bg-white dark:bg-zinc-900 shadow-sm transition-colors hover:border-gray-300 dark:border-zinc-700 {{ $eyeFrameStyle === $style ? 'border-primary-500 bg-primary-50 dark:bg-primary-950/50 ring-1 ring-primary-200 dark:ring-primary-800' : 'border-gray-200 dark:border-zinc-800' }}">
-                                    <x-qr-shape-icon shape="{{ $config['svg'] }}" :size="14" />
-                                </button>
-                                @endforeach
-                            </div>
-                        </div>
-
-                        {{-- Eye Ball Shape (inner dot of corners) --}}
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Eye Ball Shape</label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-0.5">Inner shape of the corner finder patterns</p>
-                            <div class="mt-2 flex flex-wrap gap-1">
-                                @foreach(config('qr_shapes.eye_ball') as $style => $config)
-                                <button wire:click="setDesign('eyeBallStyle', '{{ $style }}')" type="button"
-                                        title="{{ $config['label'] }}"
-                                        class="flex h-6 w-6 shrink-0 items-center justify-center rounded border bg-white dark:bg-zinc-900 shadow-sm transition-colors hover:border-gray-300 dark:border-zinc-700 {{ $eyeBallStyle === $style ? 'border-primary-500 bg-primary-50 dark:bg-primary-950/50 ring-1 ring-primary-200 dark:ring-primary-800' : 'border-gray-200 dark:border-zinc-800' }}">
-                                    <x-qr-shape-icon shape="{{ $config['svg'] }}" :size="14" />
-                                </button>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Frame --}}
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Frame</label>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                    @foreach(['' => 'None', 'simple' => 'Simple Border', 'rounded' => 'Rounded', 'banner' => 'Banner'] as $style => $label)
-                    <button wire:click="setDesign('frameStyle', '{{ $style }}')" type="button"
-                            class="rounded-lg border-2 px-3 py-1.5 text-xs {{ $frameStyle === $style ? 'border-primary-600 bg-primary-50 dark:bg-primary-950/50' : 'border-gray-200 dark:border-zinc-800' }}">
-                        {{ $label }}
-                    </button>
-                    @endforeach
-                    </div>
-                    @if($frameStyle)
-                    <div class="mt-3">
-                        <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 dark:text-gray-500">Call-to-action text</label>
-                        <input wire:model.live.debounce.300ms="frameText" type="text" placeholder="Scan me!" maxlength="30"
-                               class="mt-1 block w-full rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm">
-                    </div>
-                    @endif
-                </div>
-
-                <div x-data="{ iconModalOpen: false }">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('qr.logo') }}</label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-2">{{ __('qr.logo_help') }}</p>
-                    <input wire:model="logo" type="file" accept="image/png,image/jpeg,image/svg+xml"
-                           class="block w-full text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 file:mr-4 file:rounded-lg file:border-0 file:bg-primary-50 dark:bg-primary-950/50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-700 dark:text-primary-400 hover:file:bg-primary-100">
-                    @error('logo') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
-                    @if($existingLogo && !str_starts_with($existingLogo ?? '', 'icons/'))
-                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">Current: {{ basename($existingLogo) }}</p>
-                    @endif
-
-                    <div class="mt-2 flex items-center gap-2">
-                        <button type="button"
-                                class="rounded-lg border border-gray-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800"
-                                @click="iconModalOpen = true">
-                            <i class="fa-solid fa-icons mr-1.5"></i>Use an icon
-                        </button>
-                        @if($selectedIcon)
-                            <span class="text-xs text-primary-600">{{ $selectedIcon }}</span>
-                            <button wire:click="selectIcon(null)" type="button" class="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300">Clear</button>
-                        @endif
-                    </div>
-
-                    {{-- Icon picker modal --}}
-                    <div x-show="iconModalOpen" x-cloak
-                         x-effect="document.body.style.overflow = iconModalOpen ? 'hidden' : ''"
-                         class="fixed inset-0 z-50 flex items-center justify-center p-4"
-                         x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0"
-                         x-transition:enter-end="opacity-100"
-                         x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100"
-                         x-transition:leave-end="opacity-0">
-                        <div class="absolute inset-0 bg-black/50" @click="iconModalOpen = false"></div>
-                        <div class="relative w-full max-w-2xl rounded-xl bg-white dark:bg-zinc-900 shadow-xl flex flex-col overflow-hidden"
-                             @click.stop>
-                            <div class="flex shrink-0 items-center justify-between border-b border-gray-200 dark:border-zinc-800 px-4 py-3">
-                                <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Choose an icon</h3>
-                                <button type="button" @click="iconModalOpen = false"
-                                        class="rounded-lg p-1 text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:text-gray-600 dark:text-gray-400 dark:text-gray-500">
-                                    <i class="fa-solid fa-xmark text-xl"></i>
-                                </button>
-                            </div>
-                            <div class="min-h-0 max-h-[400px] overflow-y-auto overflow-x-hidden p-4">
-                                <div class="flex flex-wrap gap-2">
-                                    @foreach($this->availableIcons as $icon)
-                                        <button type="button"
-                                                wire:click="selectIcon('{{ $icon }}')"
-                                                @click="iconModalOpen = false"
-                                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors {{ $selectedIcon === $icon ? 'bg-primary-50 dark:bg-primary-950/50' : 'hover:bg-gray-100 dark:hover:bg-zinc-800' }}">
-                                            <img src="{{ asset('icons/qr-center-icons/' . $icon . '.svg') }}" alt="{{ $icon }}" class="h-4 w-4" loading="lazy">
-                                        </button>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-                {{-- Live preview (right) --}}
-                <div class="lg:w-72 lg:shrink-0">
-                    <div class="lg:sticky lg:top-24">
-                    <p class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300 text-center">Preview</p>
-                    <div class="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 shadow-sm">
-                        <div class="relative" style="min-height: 200px">
-                            @if($preview)
-                                <img src="{{ $preview }}" alt="QR Code Preview"
-                                     class="w-full rounded-lg transition-opacity duration-200"
-                                     wire:loading.class="opacity-20"
-                                     wire:target="setDesign,fgColor,bgColor,useGradient,gradientColor1,gradientColor2,gradientType,logo,selectIcon,eyeFrameStyle,eyeBallStyle">
-                            @else
-                                <div class="flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-zinc-700" style="height: 200px">
-                                    <i class="fa-solid fa-spinner fa-spin text-2xl text-gray-300"></i>
-                                </div>
-                            @endif
-                            <div wire:loading.flex wire:target="setDesign,fgColor,bgColor,useGradient,gradientColor1,gradientColor2,gradientType,logo,selectIcon,eyeFrameStyle,eyeBallStyle"
-                                 class="absolute top-0 left-0 right-0 bottom-0 items-center justify-center rounded-lg bg-white dark:bg-zinc-900/50" style="display:none">
-                                <div class="flex flex-col items-center gap-3">
-                                    <i class="fa-solid fa-spinner fa-spin text-4xl text-primary-600"></i>
-                                    <span class="text-sm font-semibold text-primary-600">Updating...</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-3 flex items-center justify-center gap-1.5">
-                            <div class="h-3 w-3 rounded-full border" style="background-color: {{ $fgColor }}"></div>
-                            <span class="text-xs text-gray-400 dark:text-gray-500">on</span>
-                            <div class="h-3 w-3 rounded-full border" style="background-color: {{ $bgColor }}"></div>
-                            <span class="mx-1 text-gray-300">|</span>
-                            <span class="text-xs text-gray-400 dark:text-gray-500 capitalize">{{ $dotStyle }}</span>
-                        </div>
-                    </div>
-                </div>
-                </div>
-            </div>
-
-            {{-- Navigation buttons (below both columns) --}}
-            <div class="flex w-full justify-between border-t border-gray-200 dark:border-zinc-800 pt-6">
-                <button wire:click="previousStep" class="rounded-lg border border-gray-300 dark:border-zinc-700 px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-800/60 transition">
-                    {{ __('common.back') }}
-                </button>
-                <button wire:click="nextStep" class="rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 transition">
-                    {{ __('common.next') }}
-                </button>
-            </div>
-        </div>
+            @include('livewire.qr-codes._design-step-' . config('qrcode.generator_engine', 'v1'))
         @endif
 
         {{-- Step 3: Preview & Save --}}
@@ -606,17 +396,17 @@
                     <div class="mt-1 flex justify-between">
                         <span class="text-gray-500 dark:text-gray-400 dark:text-gray-500">Mode:</span>
                         <span class="font-medium">
-                            @if(\App\Enums\QrCodeType::from($type)->isDynamic())
-                                {{ $editing ? __('qr.dynamic') : __('qr.static') }}
-                                @if(!$editing)
-                                    <span class="text-xs text-gray-400 dark:text-gray-500">(upgradeable)</span>
-                                @endif
+                            @if(\App\Enums\QrCodeType::from($type)->isDynamic() && $isDynamic)
+                                {{ __('qr.dynamic') }}
                             @else
                                 {{ __('qr.static') }}
+                                @if(\App\Enums\QrCodeType::from($type)->isDynamic())
+                                    <span class="text-xs text-gray-400 dark:text-gray-500">(can be made dynamic)</span>
+                                @endif
                             @endif
                         </span>
                     </div>
-                    @if($editing && \App\Enums\QrCodeType::from($type)->isDynamic() && $qrCode?->shortLink && !auth()->user()->hasFreeDynamicEdits())
+                    @if($isDynamic && \App\Enums\QrCodeType::from($type)->isDynamic() && $qrCode?->shortLink && !auth()->user()->hasFreeDynamicEdits())
                     <div class="mt-1 flex justify-between"><span class="text-gray-500 dark:text-gray-400">Edit cost:</span><span class="font-medium text-amber-600">€1 per save</span></div>
                     @endif
                 </div>

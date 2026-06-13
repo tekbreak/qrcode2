@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\RecordScanJob;
+use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Models\QrCode;
 use App\Models\ShortLink;
 use Illuminate\Http\Request;
@@ -20,11 +21,18 @@ class RedirectController extends Controller
                 ->where('is_active', true)
                 ->first();
 
-            if (! $link) return null;
+            if (! $link) {
+                return null;
+            }
+
+            $contentData = $link->qrCode?->content_data ?? [];
 
             return [
                 'id' => $link->id,
                 'destination_url' => $link->destination_url,
+                'link_type' => $link->link_type ?? 'redirect',
+                'networks' => $contentData['networks'] ?? [],
+                'qr_name' => $link->qrCode?->name ?? '',
                 'qr_code_id' => $link->qr_code_id,
                 'rules' => $link->rules,
                 'password_hash' => $link->password_hash,
@@ -70,6 +78,14 @@ class RedirectController extends Controller
             userAgent: $request->userAgent(),
             referrer: $request->header('referer'),
         );
+
+        if (($linkData['link_type'] ?? 'redirect') === 'social_hub') {
+            return response()->view('redirect.social-hub', [
+                'networks' => $linkData['networks'],
+                'qr_name' => $linkData['qr_name'],
+                'platforms' => QrCodeBuilder::socialPlatforms(),
+            ]);
+        }
 
         return redirect()->away($linkData['destination_url'], 302);
     }
