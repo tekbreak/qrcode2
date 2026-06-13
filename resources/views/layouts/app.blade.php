@@ -127,5 +127,6 @@
     </div>
     <x-cookie-consent />
     @livewireScripts
+    @stack('scripts')
 </body>
 </html>
