@@ -53,4 +53,11 @@ return [
     'plan_payment_failed' => 'Unable to start checkout. Please verify your Stripe configuration or choose Starter to continue for free.',
     'account_already_exists' => 'An account with this email already exists. Please sign in instead.',
     'checkout_cancelled' => 'Checkout was cancelled. Choose a plan below to continue, or pick Starter to get started for free.',
+    'verify_email' => 'Verify your email address',
+    'verify_email_subtitle' => 'We sent a verification link to :email. Please open it to finish setting up your account.',
+    'verify_email_sent' => 'A new verification link has been sent to your email address.',
+    'verify_email_resend' => 'Resend verification email',
+    'google_email_unverified' => 'Your Google account does not have a verified email address.',
+    'link_google_from_settings' => 'An account with this email already exists. Sign in with your password first, then connect Google from your settings.',
+    'password_incorrect' => 'The password you entered is incorrect.',
 ];

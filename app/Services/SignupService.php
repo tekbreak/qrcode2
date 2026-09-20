@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Stripe\Exception\ApiErrorException;
 
@@ -28,7 +29,9 @@ class SignupService
             'type' => 'email',
             'name' => $data['name'],
             'email' => $data['email'],
-            'password' => $data['password'],
+            // Hashed before it is stored: the session store is a database table
+            // and a pending signup should never leave a readable password in it.
+            'password' => Hash::make($data['password']),
         ]]);
     }
 
@@ -134,11 +137,16 @@ class SignupService
             $attributes['avatar'] = $pending['avatar'];
             $attributes['email_verified_at'] = now();
             $attributes['password'] = str()->random(24);
-        } else {
-            $attributes['password'] = $pending['password'];
+
+            return User::create($attributes);
         }
 
-        return User::create($attributes);
+        // Already hashed in storeEmailSignup(); forceFill past the 'hashed' cast
+        // rather than relying on it to detect that.
+        $user = new User($attributes);
+        $user->forceFill(['password' => $pending['password']])->save();
+
+        return $user;
     }
 
     protected function finalizeSignup(

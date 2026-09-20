@@ -16,6 +16,12 @@ class PaidActionController extends Controller
             return redirect()->route('qr-codes.index')->with('status', __('qr.updated'));
         }
 
+        // The browser reaching this URL proves nothing; ask Stripe whether the
+        // checkout session we created was actually paid.
+        if (! $paidActionService->confirmPayment($paidAction, $request->query('session_id'))) {
+            return redirect()->route('qr-codes.index')->with('error', __('qr.paid_action_not_paid'));
+        }
+
         $paidActionService->applyAction($paidAction);
 
         return redirect()->route('qr-codes.index')->with('status', __('qr.updated'));

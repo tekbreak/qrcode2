@@ -1,0 +1,138 @@
+================================================================================
+16 - LOW - Short-link slugs are short enough to enumerate
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Insufficient entropy / insecure direct object reference
+Verified      : Configuration and generator read
+Affected files: app/Models/ShortLink.php:52-61 (generateSlug)
+                config/qrcode.php:56 ('slug_length' => 7)
+                app/Http/Controllers/RedirectController.php:14-43
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+    public static function generateSlug(): string
+    {
+        $length = config('qrcode.slug_length', 7);
+
+        do {
+            $slug = substr(hash('sha256', (string) Str::uuid()), 0, $length);
+        } while (static::where('slug', $slug)->exists());
+
+        return $slug;
+    }
+
+The source entropy is fine (a UUID through SHA-256), but the output is truncated
+to 7 **hexadecimal** characters - 16^7 ≈ 2.7 x 10^8, about 28 bits. The route
+accepts `[a-zA-Z0-9_-]+`, so six bits per character of the available alphabet are
+being discarded.
+
+/{slug} is unauthenticated by design, and - per finding 10 - unthrottled, so the
+whole keyspace can be walked. A response distinguishes a live link (302 or a
+rendered hub page) from a dead one (404) unambiguously.
+
+Two related notes:
+* Birthday collisions become likely around ~20,000 links (sqrt of the keyspace is
+  ~16k). The `do/while` loop handles that correctly, but the retry rate climbs and
+  each retry is a database round trip.
+* `RedirectController` caches by slug for 300s with `Cache::remember`, so
+  enumeration is cheap on the server side too - and a 404 result is not cached,
+  meaning a scan of the keyspace hits the database on every miss.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* An attacker can harvest the destination URL of every dynamic QR code on the
+  platform, which is a customer-list and campaign-intelligence leak (who is
+  advertising what, where, and to which landing pages).
+* Combined with finding 11, discovered password-protected links can then be
+  attacked directly.
+* Scan counts can be inflated against arbitrary links (each enumeration hit
+  dispatches RecordScanJob and increments `total_scans`), corrupting the analytics
+  customers pay for and potentially tripping `max_scans` limits - a denial of
+  service against a specific printed campaign.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Use the full URL-safe alphabet and more of it [app/Models/ShortLink.php]
+
+        public static function generateSlug(): string
+        {
+            $length = max(8, (int) config('qrcode.slug_length', 10));
+
+            do {
+                $slug = Str::random($length);   // [A-Za-z0-9], cryptographically secure
+            } while (static::where('slug', $slug)->exists());
+
+            return $slug;
+        }
+
+    `Str::random()` uses `random_bytes()`. At 10 characters over 62 symbols that is
+    ~59 bits - roughly 10^18 - which is not enumerable, and still short enough to
+    keep the QR code's data density low.
+
+    Set `'slug_length' => 10` in config/qrcode.php. Existing 7-character slugs keep
+    working; only new ones get the longer form. If the existing links are
+    considered sensitive, plan a migration that issues new slugs and keeps the old
+    ones as aliases for a deprecation window.
+
+(2) Rate-limit the redirect endpoint [routes/redirect.php]
+
+        Route::get('/{slug}', [RedirectController::class, 'handle'])
+            ->where('slug', '[a-zA-Z0-9_-]+')
+            ->middleware('throttle:redirect')
+            ->name('redirect.handle');
+
+    with a generous per-IP limiter (real scans are sparse; a scanner walking the
+    keyspace is not):
+
+        RateLimiter::for('redirect', fn (Request $request) =>
+            Limit::perMinute(120)->by($request->ip()));
+
+(3) Cache negative lookups briefly (e.g. 60s) so an enumeration sweep does not hit
+    the database on every miss:
+
+        $linkData = Cache::remember($cacheKey, 300, fn () => $this->lookup($slug) ?? false);
+
+        if ($linkData === false) {
+            abort(404);
+        }
+
+(4) Do not count obviously automated traffic. Consider skipping RecordScanJob when
+    the same IP hits many distinct slugs in a short window, so enumeration cannot
+    pollute customers' analytics or burn their scan limits.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_slugs_have_sufficient_entropy(): void
+    {
+        $slug = ShortLink::generateSlug();
+
+        $this->assertGreaterThanOrEqual(10, strlen($slug));
+        $this->assertMatchesRegularExpression('/^[A-Za-z0-9]+$/', $slug);
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-330 Use of Insufficiently Random Values
+CWE-340 Generation of Predictable Numbers or Identifiers
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+ShortLink::generateSlug() now uses Str::random() over the full [A-Za-z0-9]
+alphabet with a minimum length of 8 and a configured default of 10 - about 59
+bits, up from about 28. Existing 7-character slugs keep working. The redirect
+route is rate limited at 120 requests per minute per IP via the `redirect`
+limiter.
+
+NOT DONE: negative-lookup caching and automated-scanner detection, both
+performance and abuse refinements rather than the vulnerability itself.
+
+Files: app/Models/ShortLink.php, config/qrcode.php, routes/redirect.php
+Tests: tests/Feature/Security/AuthHardeningTest.php
+
+Full suite after the change: 130 passed (367 assertions).

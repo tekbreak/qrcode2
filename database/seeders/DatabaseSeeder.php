@@ -14,9 +14,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->call([
-            PlanSeeder::class,
-            MockUserSeeder::class,
-        ]);
+        // PlanSeeder holds reference data every environment needs. The demo
+        // accounts use a shared, published password and must never exist outside
+        // development.
+        $this->call(PlanSeeder::class);
+
+        if (app()->environment('local', 'testing')) {
+            $this->call(MockUserSeeder::class);
+        }
     }
 }

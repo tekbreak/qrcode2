@@ -4,6 +4,7 @@ namespace App\Livewire\QrCodes;
 
 use App\Enums\Feature;
 use App\Jobs\BulkGenerateQrCodesJob;
+use App\Support\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -31,13 +32,25 @@ class BulkGenerator extends Component
         $headers = fgetcsv($handle);
 
         $this->parsedItems = [];
+        $skipped = 0;
+
         while (($row = fgetcsv($handle)) !== false) {
-            if (count($row) >= 2) {
-                $this->parsedItems[] = [
-                    'name' => $row[0] ?? '',
-                    'url' => $row[1] ?? '',
-                ];
+            if (count($row) < 2) {
+                continue;
             }
+
+            $name = trim((string) ($row[0] ?? ''));
+            $url = trim((string) ($row[1] ?? ''));
+
+            // Every row becomes a public short link, so the same destination
+            // rules apply here as in the builder.
+            if ($name === '' || mb_strlen($name) > 255 || ! Url::isSafe($url)) {
+                $skipped++;
+
+                continue;
+            }
+
+            $this->parsedItems[] = ['name' => $name, 'url' => $url];
         }
         fclose($handle);
 
@@ -45,11 +58,33 @@ class BulkGenerator extends Component
             $this->parsedItems = array_slice($this->parsedItems, 0, 500);
             session()->flash('warning', 'Limited to 500 items per batch.');
         }
+
+        if ($skipped > 0) {
+            session()->flash('warning', trim(
+                ($skipped === 1 ? '1 row was skipped' : "{$skipped} rows were skipped")
+                . ' because the name was missing or the URL was not a valid http/https address.'
+            ));
+        }
     }
 
     public function generate()
     {
         if (empty($this->parsedItems)) {
+            return;
+        }
+
+        // parsedItems is a public property, so re-check it here rather than
+        // trusting whatever survived the round trip from parseCsv().
+        $this->parsedItems = array_values(array_filter(
+            $this->parsedItems,
+            fn ($item) => is_array($item)
+                && filled($item['name'] ?? null)
+                && Url::isSafe($item['url'] ?? null),
+        ));
+
+        if (empty($this->parsedItems)) {
+            $this->addError('csvFile', __('qr.invalid_destination'));
+
             return;
         }
 

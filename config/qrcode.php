@@ -53,7 +53,7 @@ return [
 
     'account_deletion_grace_days' => env('ACCOUNT_DELETION_GRACE_DAYS', 7),
 
-    'slug_length' => 7,
+    'slug_length' => 10,
     'logo_max_size' => 2048,
     'logo_max_dimension' => 500,
 ];

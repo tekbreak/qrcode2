@@ -1,0 +1,169 @@
+================================================================================
+17 - LOW - Input validation gaps in the public API
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Improper input validation / mass assignment - OWASP A03, A08
+Verified      : Code read; the logo_path case reproduced (see finding 5)
+Affected files: app/Http/Controllers/Api/QrCodeApiController.php:16-28 (index)
+                                                              :106-133 (update)
+                                                              :148-172 (download)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+`store()` validates reasonably. The other methods do not.
+
+a) **update() validates nothing.**
+
+        $qrCode->update($request->only(['name', 'content_data']));
+
+        if ($request->has('design')) {
+            $qrCode->design()->updateOrCreate(['qr_code_id' => $qrCode->id],
+                                              $request->input('design'));
+        }
+
+   `name` has no length limit, `content_data` no shape at all, and the whole
+   `design` array is mass-assigned into QrDesign's `$fillable` - which is how the
+   arbitrary `logo_path` in finding 5 gets in. A non-array `design` value throws a
+   500 rather than returning 422.
+
+b) **Unbounded pagination.**
+
+        ->paginate($request->input('per_page', 20));
+
+   `?per_page=1000000` loads a million rows with two eager-loaded relations.
+
+c) **Unbounded render size.**
+
+        $png = $generator->generatePng($qrCode, $request->integer('size', 1000));
+
+   The GD pipeline walks every pixel twice (`applyFgColorGd`, `applyGradientGd`).
+   `?size=20000` is a 400-megapixel image and a memory-exhaustion request. `format`
+   is likewise unvalidated - anything that is not 'svg' silently becomes a PNG.
+
+d) **Type changes are unconstrained.** `update()` does not validate `type`
+   transitions, so `content_data` can be left inconsistent with the stored type,
+   which `getEncodedContent()` then reads with unchecked array access
+   (`$d['latitude']`, `$d['phone']`) - a straightforward 500.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Mass assignment into QrDesign is the delivery mechanism for finding 5.
+* Memory/CPU exhaustion from a single authenticated request (b and c) - a cheap
+  denial of service, made cheaper by the absence of API rate limiting (finding 10).
+* Unhandled exceptions return 500s that, with APP_DEBUG on in a non-production
+  environment, disclose stack traces and configuration.
+* Data integrity: records can be written into states the builder cannot represent.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Move validation into Form Requests so store and update share one definition
+    [app/Http/Requests/Api/StoreQrCodeRequest.php, UpdateQrCodeRequest.php]
+
+        public function rules(): array
+        {
+            return [
+                'name'         => ['required', 'string', 'max:255'],
+                'type'         => ['required', Rule::enum(QrCodeType::class)],
+                'is_dynamic'   => ['boolean'],
+                'content_data' => ['required', 'array'],
+                'content_data.url'      => ['nullable', 'string', 'max:2048', new SafeDestinationUrl],
+                'content_data.file_url' => ['nullable', 'string', 'max:2048', new SafeDestinationUrl],
+                'content_data.networks'       => ['nullable', 'array', 'max:20'],
+                'content_data.networks.*.url' => ['required_with:content_data.networks', new SafeDestinationUrl],
+
+                'design'                  => ['nullable', 'array'],
+                'design.fg_color'         => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+                'design.bg_color'         => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+                'design.dot_style'        => ['nullable', Rule::in(array_keys(config('qr_shapes.body')))],
+                'design.eye_frame_style'  => ['nullable', Rule::in(array_keys(config('qr_shapes.eye_frame')))],
+                'design.eye_ball_style'   => ['nullable', Rule::in(array_keys(config('qr_shapes.eye_ball')))],
+                // design.logo_path is deliberately absent - see finding 5
+            ];
+        }
+
+    Note the colour rule: the current `size:7` check accepts any 7-character
+    string, including `#<svg/>`. A regex is the right check.
+
+    Then write only validated, allowlisted keys:
+
+        $qrCode->design()->updateOrCreate(
+            ['qr_code_id' => $qrCode->id],
+            Arr::only($request->validated()['design'] ?? [], [
+                'fg_color', 'bg_color', 'gradient', 'dot_style', 'eye_style',
+                'eye_frame_style', 'eye_ball_style', 'frame_style', 'frame_text',
+                'logo_match_fg_color', 'template_id',
+            ])
+        );
+
+(2) Bound pagination
+
+        $perPage = min(max((int) $request->input('per_page', 20), 1), 100);
+        $qrCodes = $request->user()->qrCodes()->with('design', 'shortLink')
+            ->latest()->paginate($perPage);
+
+(3) Bound and validate the render request [download()]
+
+        $validated = $request->validate([
+            'format' => ['nullable', Rule::in(['png', 'jpg', 'svg', 'eps'])],
+            'size'   => ['nullable', 'integer', 'min:100', 'max:2000'],
+        ]);
+
+    and reject an unknown format explicitly instead of defaulting to PNG.
+
+(4) Return JSON problem responses rather than 500s: add an api exception renderer
+    in bootstrap/app.php's `withExceptions()` block (currently empty) so
+    ValidationException, AuthorizationException and ModelNotFoundException produce
+    422/403/404 JSON for API routes.
+
+(5) Keep the plan check in one place. Every method repeats the same
+    `hasFeature(Feature::ApiAccess)` block; a small middleware
+    (`->middleware('feature:api_access')`) removes the chance of a future method
+    forgetting it.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_update_rejects_unknown_design_keys(): void
+    {
+        $this->actingAs($pro, 'sanctum')
+            ->putJson("/api/qr-codes/{$qr->id}", ['design' => ['logo_path' => '/etc/passwd']])
+            ->assertStatus(422);
+    }
+
+    public function test_per_page_and_size_are_bounded(): void
+    {
+        $this->actingAs($pro, 'sanctum')->getJson('/api/qr-codes?per_page=1000000')
+            ->assertOk()->assertJsonPath('per_page', 100);
+
+        $this->actingAs($pro, 'sanctum')->getJson("/api/qr-codes/{$qr->id}/download?size=20000")
+            ->assertStatus(422);
+    }
+
+Extend the existing tests/Feature/Api/QrCodeApiTest.php.
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-20 Improper Input Validation
+CWE-915 Improperly Controlled Modification of Dynamically-Determined Object Attributes
+CWE-770 Allocation of Resources Without Limits or Throttling
+OWASP API Security Top 10: API6 Mass Assignment, API4 Resource Consumption
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Added StoreQrCodeRequest and UpdateQrCodeRequest form requests with full
+validation of content_data (including destination URLs), an explicit design-key
+allowlist, colour regexes replacing the old size:7 check, a prohibited logo_path
+and a prohibited type change on update. per_page is clamped to 1-100; the
+download endpoint validates format against an allowlist and size to 100-2000.
+
+Files: app/Http/Requests/Api/StoreQrCodeRequest.php
+       app/Http/Requests/Api/UpdateQrCodeRequest.php
+       app/Http/Controllers/Api/QrCodeApiController.php
+Tests: tests/Feature/Security/UploadAndUrlTest.php (3 API cases)
+
+Full suite after the change: 130 passed (367 assertions).

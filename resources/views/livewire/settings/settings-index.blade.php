@@ -63,13 +63,21 @@
             <button @click="confirming = true" x-show="!confirming" class="mt-4 rounded-lg border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:bg-red-950/50 transition">
                 {{ __('settings.delete_account') }}
             </button>
-            <div x-show="confirming" class="mt-4 flex items-center gap-3">
+            <div x-show="confirming" class="mt-4 space-y-3">
+                <div>
+                    <label for="delete_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('settings.delete_confirm_password') }}</label>
+                    <input wire:model="delete_password" id="delete_password" type="password" autocomplete="current-password"
+                           class="mt-1 block w-full max-w-sm rounded-lg border-gray-300 dark:border-zinc-700 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm">
+                    @error('delete_password') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                </div>
+                <div class="flex items-center gap-3">
                 <button wire:click="deleteAccount" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition">
                     {{ __('settings.confirm_delete') }}
                 </button>
                 <button @click="confirming = false" class="rounded-lg border border-gray-300 dark:border-zinc-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-zinc-800 dark:bg-zinc-800/60 transition">
                     {{ __('common.cancel') }}
                 </button>
+                </div>
             </div>
         </div>
     </div>

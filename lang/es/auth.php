@@ -53,4 +53,11 @@ return [
     'plan_payment_failed' => 'No se pudo iniciar el pago. Verifica la configuración de Stripe o elige Starter para continuar gratis.',
     'account_already_exists' => 'Ya existe una cuenta con este correo. Inicia sesión en su lugar.',
     'checkout_cancelled' => 'El pago fue cancelado. Elige un plan para continuar o selecciona Starter para empezar gratis.',
+    'verify_email' => 'Verifica tu dirección de correo',
+    'verify_email_subtitle' => 'Enviamos un enlace de verificación a :email. Ábrelo para terminar de configurar tu cuenta.',
+    'verify_email_sent' => 'Se ha enviado un nuevo enlace de verificación a tu correo.',
+    'verify_email_resend' => 'Reenviar correo de verificación',
+    'google_email_unverified' => 'Tu cuenta de Google no tiene una dirección de correo verificada.',
+    'link_google_from_settings' => 'Ya existe una cuenta con este correo. Inicia sesión con tu contraseña y luego conecta Google desde tus ajustes.',
+    'password_incorrect' => 'La contraseña introducida es incorrecta.',
 ];

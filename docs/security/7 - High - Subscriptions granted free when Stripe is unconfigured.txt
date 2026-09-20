@@ -1,0 +1,152 @@
+================================================================================
+7 - HIGH - Billing fails open: paid plans are granted for free when Stripe is
+           not configured
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Business logic flaw / insecure default - OWASP A04:2021
+Verified      : Code path traced; exercised indirectly by the test suite, which
+                relies on this branch (STRIPE_SECRET="" in phpunit.xml)
+Affected files: app/Services/SubscriptionService.php:101-119 (usesStripeCheckout)
+                app/Services/SubscriptionService.php:122-139 (applyDevSubscription)
+                app/Livewire/Billing/BillingIndex.php:35-65 (subscribe)
+                app/Services/SignupService.php:53-101
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+`usesStripeCheckout()` returns false - silently - in several situations:
+
+    public function usesStripeCheckout(?string $priceId): bool
+    {
+        if (! $priceId || str_starts_with($priceId, 'dev_')) return false;
+
+        $secret = config('cashier.secret');
+        $key    = config('cashier.key');
+
+        if (! filled($secret) || ! filled($key)) return false;     // <-- unconfigured
+        if (! str_starts_with($secret, 'sk_'))   return false;     // <-- wrong key type
+
+        return true;
+    }
+
+and every caller responds to false by granting the subscription locally:
+
+    $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
+    ...
+    $user->subscriptions()->create([
+        'stripe_id'     => 'dev_' . Str::random(16),
+        'stripe_status' => 'active',        // <-- fully entitled, never charged
+        'stripe_price'  => $priceId,
+    ]);
+
+`User::planTier()` / `hasFeature()` read exactly that row, so the account gains
+full Enterprise entitlements.
+
+This is reachable by any authenticated user from the billing page:
+BillingIndex::subscribe('enterprise') -> SubscriptionService::subscribe(). There
+is no environment guard on the fallback - `app()->isProduction()` is never
+consulted anywhere in this service.
+
+The related paid-action flow has the same shape and is already failing open in
+production today; that is covered in finding 2.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Any misconfiguration of Stripe credentials converts the product into a free
+  one, for every user, with no error and no log line. Realistic triggers: key
+  rotation, a publishable key pasted into STRIPE_SECRET (the code even comments
+  on this mistake, which suggests it has happened), a fresh staging environment,
+  a failed deploy that ships an incomplete .env, or `config:cache` run before the
+  environment file was in place.
+* Users self-provision Enterprise: unlimited dynamic QR codes, API access, teams,
+  custom domains, plus the enterprise "free dynamic edits" bypass in
+  PaidActionService::enterpriseBypass().
+* The local subscription rows look genuine (`stripe_status = active`), so the
+  condition is hard to spot after the fact; only the `dev_` prefix distinguishes
+  them.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Never take the dev path outside local/testing
+    [app/Services/SubscriptionService.php]
+
+        protected function devBillingAllowed(): bool
+        {
+            return app()->environment('local', 'testing');
+        }
+
+        public function subscribe(User $user, string $planSlug, bool $yearly = false, ...)
+        {
+            ...
+            if ($this->usesStripeCheckout($priceId)) {
+                // real checkout
+            }
+
+            if (! $this->devBillingAllowed()) {
+                throw new \RuntimeException(__('auth.plan_payment_failed'));
+            }
+
+            $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
+        }
+
+    Apply the same guard at all three call sites in this class (new subscription,
+    swap, and the signup path in SignupService).
+
+(2) Make the misconfiguration loud [app/Providers/AppServiceProvider.php::boot()]
+
+        if (app()->isProduction()) {
+            $secret = config('cashier.secret');
+
+            if (blank($secret) || ! str_starts_with($secret, 'sk_')) {
+                throw new \RuntimeException('Stripe secret key is missing or malformed.');
+            }
+        }
+
+    Combine with the webhook assertion from finding 6 into a single
+    "assertBillingConfigured()" check so a deploy cannot half-configure billing.
+
+(3) Distinguish dev grants in the data model. `AccountDeletionService` already
+    filters on `stripe_id not like 'dev_%'`, so the convention exists - make it
+    explicit with a `is_dev` boolean column, and add an admin-dashboard counter
+    for active dev subscriptions so a leak is visible immediately.
+
+(4) Consider whether `str_starts_with($priceId, 'dev_')` should short-circuit at
+    all in a deployed environment: a plan row whose price id is mistyped as
+    `dev_...` currently becomes a free plan for everyone who selects it.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_production_refuses_to_grant_a_plan_without_stripe(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+        config(['cashier.secret' => '', 'cashier.key' => '']);
+
+        $this->expectException(\RuntimeException::class);
+
+        app(SubscriptionService::class)->subscribe($user, 'enterprise');
+
+        $this->assertFalse($user->fresh()->subscribed());
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-636 Not Failing Securely ('Failing Open')
+CWE-840 Business Logic Errors
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+SubscriptionService::guardDevBilling() throws unless the environment is local or
+testing, and is called on both paths that previously fell through to
+applyDevSubscription(). assertBillingConfigured() makes a malformed or missing
+Stripe secret a boot failure in production rather than a silent downgrade to free
+plans.
+
+Files: app/Services/SubscriptionService.php, app/Providers/AppServiceProvider.php
+Tests: tests/Feature/Security/BillingIntegrityTest.php
+
+Full suite after the change: 130 passed (367 assertions).

@@ -86,8 +86,41 @@ class PaidActionService
         return json_encode(array_values($networks));
     }
 
+    /**
+     * Confirm with Stripe that the checkout session behind this paid action was
+     * actually paid. The session id must be the one we stored when creating the
+     * checkout, so a session id supplied by the browser cannot be substituted.
+     */
+    public function confirmPayment(PaidAction $paidAction, ?string $sessionId): bool
+    {
+        $storedSessionId = $paidAction->stripe_checkout_session_id;
+
+        if (blank($storedSessionId) || $sessionId !== $storedSessionId) {
+            return false;
+        }
+
+        try {
+            $session = $paidAction->user->stripe()->checkout->sessions->retrieve($storedSessionId);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return false;
+        }
+
+        return ($session->payment_status ?? null) === 'paid';
+    }
+
     public function createCheckout(User $user, QrCode $qrCode, PaidActionType $actionType, array $pendingData): RedirectResponse
     {
+        $priceId = config('qrcode.paid_action_stripe_price_id');
+        $useStripe = $priceId && ! str_starts_with($priceId, 'dev_');
+
+        // Fail closed: if paid actions are not wired up to Stripe, refuse the
+        // action rather than silently applying it for free.
+        if (! $useStripe && ! app()->environment('local', 'testing')) {
+            throw new \RuntimeException(__('qr.paid_action_unavailable'));
+        }
+
         $paidAction = PaidAction::create([
             'user_id' => $user->id,
             'qr_code_id' => $qrCode->id,
@@ -97,9 +130,7 @@ class PaidActionService
             'amount_cents' => config('qrcode.paid_action_price_cents', 100),
         ]);
 
-        $priceId = config('qrcode.paid_action_stripe_price_id');
-
-        if ($priceId && ! str_starts_with($priceId, 'dev_')) {
+        if ($useStripe) {
             $checkout = $user->checkout([$priceId => 1], [
                 'success_url' => route('paid-actions.success', $paidAction).'?session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url' => route('paid-actions.cancel', $paidAction),

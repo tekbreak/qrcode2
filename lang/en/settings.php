@@ -13,4 +13,5 @@ return [
     'delete_warning' => 'Once you delete your account, all data will be permanently removed.',
     'delete_account' => 'Delete Account',
     'confirm_delete' => 'Yes, delete my account',
+    'delete_confirm_password' => 'Enter your password to confirm',
 ];

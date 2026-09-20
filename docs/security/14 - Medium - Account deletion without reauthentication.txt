@@ -1,0 +1,173 @@
+================================================================================
+14 - MEDIUM - Self-service account deletion needs no re-authentication and leaves
+              data behind
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Insufficient verification for a destructive action /
+                incomplete data deletion
+Verified      : Code read; contrasted against the thorough service that already
+                exists in the codebase
+Affected files: app/Livewire/Settings/SettingsIndex.php:62-77 (deleteAccount)
+                app/Livewire/Settings/SettingsIndex.php:42-60 (updatePassword)
+                app/Services/AccountDeletionService.php:111-148 (the correct version)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+`SettingsIndex::deleteAccount()` destroys the account with no confirmation of
+identity:
+
+    public function deleteAccount()
+    {
+        $user = auth()->user();
+
+        if ($user->subscribed()) {
+            $user->subscription()->cancel();
+        }
+
+        $user->qrCodes()->delete();
+        $user->delete();
+
+        auth()->logout();
+        session()->invalidate();
+
+        return redirect('/');
+    }
+
+No current password, no typed confirmation, no re-authentication window. Any
+opportunity to act as the user - an unattended laptop, a stolen session cookie, a
+successful XSS (see findings 3 and 4) - becomes irreversible destruction.
+
+The application already contains a careful deletion routine,
+`AccountDeletionService::deleteUserCompletely()`, which wraps everything in a
+transaction and also clears teams, custom domains, subscription items, API
+tokens, database sessions and the Stripe customer. The settings page does not use
+it, so the self-service path leaves behind:
+
+* `personal_access_tokens` rows (Sanctum tokens are a morph relation - no cascade);
+* `sessions` rows for that user;
+* the Stripe customer object;
+* team memberships and owned teams.
+
+`updatePassword()` in the same component has a related gap: it verifies the
+current password (good) but does not invalidate other sessions afterwards, so an
+attacker who already has a session keeps it after the victim changes the password.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* One click (or one forged Livewire action from an XSS payload) irreversibly
+  deletes an account, every QR code it owns, and every short link those codes
+  point at - which breaks printed, in-the-wild QR codes permanently.
+* Orphaned API tokens and session rows: rows that outlive the user are a hygiene
+  and audit problem, and a liability if a future code path resolves them loosely.
+* Privacy/GDPR: an erasure request handled through this path leaves personal data
+  in Stripe and in the sessions table.
+* Password changes do not evict an attacker who already holds a session, which
+  defeats the usual "change your password" incident response.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Require the current password, and reuse the complete deletion routine
+    [app/Livewire/Settings/SettingsIndex.php]
+
+        public string $delete_password = '';
+
+        public function deleteAccount(AccountDeletionService $deletions)
+        {
+            $this->validate(['delete_password' => 'required|string']);
+
+            $user = auth()->user();
+
+            if (! Hash::check($this->delete_password, $user->password)) {
+                $this->addError('delete_password', __('auth.password_incorrect'));
+
+                return;
+            }
+
+            $deletions->deleteUserCompletely($user);   // transactional, thorough
+
+            auth()->logout();
+            session()->invalidate();
+            session()->regenerateToken();
+
+            return redirect('/');
+        }
+
+    For accounts created through Google that have no usable password, fall back to
+    a confirmation code e-mailed to the verified address.
+
+(2) Invalidate other sessions on password change [same file]
+
+        public function updatePassword()
+        {
+            ...
+            $user->update(['password' => $this->new_password]);   // 'hashed' cast handles it
+
+            auth()->logoutOtherDevices($this->new_password);
+            $user->tokens()->delete();                            // revoke API tokens too
+
+            $this->reset(['current_password', 'new_password', 'new_password_confirmation']);
+
+            session()->flash('status', 'Password updated successfully.');
+        }
+
+    Note: `Hash::make()` is unnecessary here - the model's `'password' => 'hashed'`
+    cast already hashes on assignment.
+
+(3) Consider a grace period for self-service deletion, mirroring the existing
+    scheduled-deletion design: mark the account, send a mail with a cancel link,
+    and delete after the configured `account_deletion_grace_days`. The
+    infrastructure for this is already in AccountDeletionService.
+
+(4) Add a typed confirmation in the UI ("type DELETE to confirm") - not a security
+    control on its own, but it prevents accidental clicks, which is the more
+    common cause of loss.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_deletion_requires_the_current_password(): void
+    {
+        Livewire::actingAs($user)->test(SettingsIndex::class)
+            ->set('delete_password', 'wrong')
+            ->call('deleteAccount')
+            ->assertHasErrors('delete_password');
+
+        $this->assertDatabaseHas('users', ['id' => $user->id]);
+    }
+
+    public function test_deletion_removes_tokens_and_sessions(): void
+    {
+        // assertDatabaseMissing on personal_access_tokens and sessions
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-306 Missing Authentication for Critical Function
+CWE-613 Insufficient Session Expiration
+OWASP Session Management Cheat Sheet
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+deleteAccount() now requires the current password and delegates to
+AccountDeletionService::deleteUserCompletely(), so tokens, sessions, teams,
+subscription items and the Stripe customer are cleaned up transactionally.
+updatePassword() calls logoutOtherDevices() and revokes API tokens, and no longer
+double-handles hashing (the 'hashed' cast does it).
+
+ALSO FIXED - a pre-existing bug found while testing this: deletion ran before
+auth()->logout(), and SessionGuard::logout() cycles the remember token by SAVING
+the model - saving a deleted model re-inserts the row. Account deletion silently
+did not work for any user with a remember_token, which is every user who ticked
+"remember me" and every user created by the factory. Logout now happens first.
+
+Files: app/Livewire/Settings/SettingsIndex.php
+       resources/views/livewire/settings/settings-index.blade.php
+       lang/{en,es}/settings.php
+Tests: tests/Feature/Security/AuthHardeningTest.php (3 cases)
+
+Full suite after the change: 130 passed (367 assertions).

@@ -14,6 +14,11 @@ class MockUserSeeder extends Seeder
 {
     public const PASSWORD = 'password';
 
+    public static function password(): string
+    {
+        return env('MOCK_USER_PASSWORD', self::PASSWORD);
+    }
+
     /**
      * @return array<int, array{name: string, email: string, role_label: string, plan: string, is_admin?: bool}>
      */
@@ -49,6 +54,12 @@ class MockUserSeeder extends Seeder
 
     public function run(): void
     {
+        if (! app()->environment('local', 'testing')) {
+            throw new \RuntimeException(
+                'MockUserSeeder creates accounts with a known password and must not run outside local/testing.'
+            );
+        }
+
         foreach (self::accounts() as $account) {
             $this->seedAccount($account);
         }
@@ -59,17 +70,21 @@ class MockUserSeeder extends Seeder
      */
     private function seedAccount(array $account): User
     {
-        $user = User::updateOrCreate(
-            ['email' => $account['email']],
-            [
-                'name' => $account['name'],
-                'password' => self::PASSWORD,
-                'email_verified_at' => now(),
-                'is_admin' => $account['is_admin'] ?? false,
-                'selected_plan' => $account['plan'],
-                'plan_selected_at' => now(),
-            ]
-        );
+        $user = User::firstOrNew(['email' => $account['email']]);
+
+        // Only set the password when creating the account, so a rotated password
+        // is not silently reset by a later seed run.
+        if (! $user->exists) {
+            $user->password = self::password();
+        }
+
+        $user->forceFill([
+            'name' => $account['name'],
+            'email_verified_at' => now(),
+            'is_admin' => $account['is_admin'] ?? false,
+            'selected_plan' => $account['plan'],
+            'plan_selected_at' => now(),
+        ])->save();
 
         $this->applyPlan($user->fresh(), $account['plan']);
 

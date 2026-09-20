@@ -1,0 +1,135 @@
+================================================================================
+6 - HIGH - Stripe webhook silently accepts unsigned events when the secret is unset
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Missing authentication for a critical function - OWASP A07:2021
+Verified      : Route confirmed registered and unauthenticated; behaviour read
+                from the Cashier source shipped in vendor/
+Affected files: bootstrap/app.php (no webhook hardening)
+                .env / .env.example  (STRIPE_WEBHOOK_SECRET is empty)
+                vendor/laravel/cashier/src/Http/Controllers/WebhookController.php:27-32
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+Cashier registers POST /stripe/webhook automatically. Confirmed present:
+
+    POST  stripe/webhook  cashier.webhook > Laravel\Cashier > WebhookController@handleWebhook
+
+Signature verification is conditional, not mandatory:
+
+    public function __construct()
+    {
+        if (config('cashier.webhook.secret')) {
+            $this->middleware(VerifyWebhookSignature::class);
+        }
+    }
+
+If `STRIPE_WEBHOOK_SECRET` is empty, the middleware is simply not attached and
+the endpoint accepts any unauthenticated POST body as a genuine Stripe event. The
+route carries no auth, no signature check and no CSRF requirement (it is in the
+api-less webhook group by design).
+
+STRIPE_WEBHOOK_SECRET is empty in `.env` and in `.env.example` - the template
+this project's `composer setup` copies when no .env exists. It is populated in
+.env.prod today, so production is currently protected, but the control fails
+open: a rotation, a typo, a fresh environment, or a staging box built from the
+example file removes it silently with no error and no log.
+
+--------------------------------------------------------------------------------
+IMPACT (when the secret is absent)
+--------------------------------------------------------------------------------
+Cashier's handler updates local subscription state from the event payload.
+Anyone on the internet can POST a forged `customer.subscription.created` or
+`customer.subscription.updated` for any known `stripe_id` and:
+
+* grant themselves an active Enterprise subscription - unlimited dynamic QR
+  codes, API access, teams, custom domains - without paying;
+* cancel or delete another customer's subscription (denial of service against a
+  paying tenant), because `planTier()` and `hasFeature()` read the local
+  subscriptions table, not Stripe;
+* clear a scheduled account deletion, or drive one, via the subscription state
+  that AccountDeletionService keys on.
+
+The blast radius is the entire billing model, and none of it touches Stripe, so
+nothing in the Stripe dashboard shows the discrepancy.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Fail closed at boot. Do not let the application start in production without
+    the secret [app/Providers/AppServiceProvider.php::boot()]:
+
+        if (app()->isProduction() && blank(config('cashier.webhook.secret'))) {
+            throw new \RuntimeException(
+                'STRIPE_WEBHOOK_SECRET is not set; the Stripe webhook would accept unsigned events.'
+            );
+        }
+
+    A loud failure at deploy time is much better than a quiet gap in production.
+
+(2) Do not rely on Cashier's conditional. Attach verification unconditionally by
+    pointing the route at your own controller, or by forcing the middleware
+    [bootstrap/app.php]:
+
+        $middleware->group('stripe-webhook', [
+            \Laravel\Cashier\Http\Middleware\VerifyWebhookSignature::class,
+        ]);
+
+    and register the webhook route yourself with that group, calling
+    `Cashier::ignoreRoutes()` in a service provider so the unconditional version
+    is the only one registered.
+
+(3) Set the value everywhere. Add STRIPE_WEBHOOK_SECRET to .env.example with a
+    comment marking it as required, and to every deployed environment's .env.
+    Verify with `php artisan tinker --execute="dd(config('cashier.webhook.secret'))"`
+    on each host.
+
+(4) Add rate limiting and logging to the webhook route so forged or replayed
+    traffic is visible:
+
+        Route::post('stripe/webhook', ...)->middleware(['stripe-webhook', 'throttle:60,1']);
+
+(5) Once finding 2 is fixed by moving fulfilment to the webhook, this endpoint
+    becomes the authority for paid actions too - all the more reason for it to be
+    verified unconditionally.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_webhook_rejects_unsigned_requests(): void
+    {
+        $this->postJson('/stripe/webhook', [
+            'id' => 'evt_test', 'type' => 'customer.subscription.updated',
+            'data' => ['object' => ['id' => 'sub_x', 'customer' => $user->stripe_id,
+                                    'status' => 'active']],
+        ])->assertForbidden();
+    }
+
+Run this test with `cashier.webhook.secret` both set and unset - it must fail the
+request in both cases once the fix is in.
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-306 Missing Authentication for Critical Function
+CWE-345 Insufficient Verification of Data Authenticity
+Stripe: https://docs.stripe.com/webhooks#verify-events
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Cashier::ignoreRoutes() is called in register(), and the webhook route is
+registered in AppServiceProvider with VerifyWebhookSignature attached
+unconditionally plus throttle:60,1 - verification no longer depends on the secret
+happening to be configured. assertBillingConfigured() additionally refuses to
+boot a production environment when STRIPE_WEBHOOK_SECRET, STRIPE_SECRET or
+STRIPE_KEY is missing or malformed.
+
+Verified: .env.prod satisfies all three, so production still boots.
+
+Files: app/Providers/AppServiceProvider.php
+Tests: tests/Feature/Security/BillingIntegrityTest.php - the webhook rejects an
+       unsigned POST even with the secret explicitly unset
+
+Full suite after the change: 130 passed (367 assertions).

@@ -5,18 +5,25 @@ namespace App\Livewire\QrCodes;
 use App\Enums\QrCodeType;
 use App\Models\QrCode;
 use App\Models\ShortLink;
+use App\Rules\SafeDestinationUrl;
 use App\Services\PaidActionService;
 use App\Services\QrCodeGeneratorService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
 class QrCodeBuilder extends Component
 {
-    use WithFileUploads;
+    use AuthorizesRequests, WithFileUploads;
 
+    #[Locked]
     public ?QrCode $qrCode = null;
+
+    #[Locked]
     public bool $editing = false;
 
     /** Base64-encoded JSON of form state for shareable URLs */
@@ -83,6 +90,8 @@ class QrCodeBuilder extends Component
     public bool $showStaticDowngradeWarning = false;
     // PDF
     public $pdfFile = null;
+
+    #[Locked]
     public ?string $existingFileUrl = null;
 
     // Link features (slug is always auto-generated)
@@ -104,6 +113,8 @@ class QrCodeBuilder extends Component
     public string $frameStyle = '';
     public string $frameText = '';
     public $logo = null;
+
+    #[Locked]
     public ?string $existingLogo = null;
     public ?string $selectedIcon = null;
     public bool $logoMatchFgColor = false;
@@ -295,10 +306,30 @@ class QrCodeBuilder extends Component
         }
 
         if ($this->addingPlatform === 'custom') {
-            return ['addingIdentifier' => 'required|url:http,https'];
+            return ['addingIdentifier' => ['required', 'string', 'max:2048', new SafeDestinationUrl]];
         }
 
         return ['addingIdentifier' => 'required|string|min:1'];
+    }
+
+    /**
+     * Uploaded logos are served from the application's own origin, so only real
+     * raster images are accepted - never SVG or anything else the browser would
+     * treat as an active document.
+     */
+    protected function logoRules(): array
+    {
+        return [
+            'logo' => [
+                'nullable',
+                'image',
+                'mimes:png,jpg,jpeg,webp',
+                'mimetypes:image/png,image/jpeg,image/webp',
+                'max:' . (int) config('qrcode.logo_max_size', 2048),
+                'dimensions:max_width=' . (int) config('qrcode.logo_max_dimension', 500)
+                    . ',max_height=' . (int) config('qrcode.logo_max_dimension', 500),
+            ],
+        ];
     }
 
     protected function ensureSocialNetworkAdded(): void
@@ -334,7 +365,17 @@ class QrCodeBuilder extends Component
             $networks = array_slice($networks, 0, 1);
         }
 
-        return $networks;
+        // Re-derive each URL from the platform template so the client's copy of
+        // it is never what gets stored (for 'custom' the identifier is the URL,
+        // and it has been through SafeDestinationUrl by this point).
+        return array_values(array_map(fn (array $network) => [
+            'platform' => $network['platform'] ?? 'custom',
+            'identifier' => $network['identifier'] ?? '',
+            'url' => static::assembleSocialUrlFor(
+                $network['platform'] ?? 'custom',
+                $network['identifier'] ?? '',
+            ),
+        ], $networks));
     }
 
     public function updatedIsDynamic(bool $value): void
@@ -402,6 +443,8 @@ class QrCodeBuilder extends Component
     public function mount(?QrCode $qrCode = null)
     {
         if ($qrCode?->exists) {
+            $this->authorize('update', $qrCode);
+
             $this->qrCode = $qrCode;
             $this->editing = true;
         }
@@ -477,8 +520,9 @@ class QrCodeBuilder extends Component
             'frameText' => $this->frameText,
             'selectedIcon' => $this->selectedIcon,
             'logoMatchFgColor' => $this->logoMatchFgColor,
-            'existingFileUrl' => $this->existingFileUrl,
-            'existingLogo' => $this->existingLogo,
+            // existingLogo / existingFileUrl deliberately excluded: the state
+            // payload travels in a shareable URL, so it must never be able to
+            // name a server-side file.
         ];
     }
 
@@ -564,8 +608,6 @@ class QrCodeBuilder extends Component
             $this->frameText = $payload['frameText'] ?? '';
             $this->selectedIcon = $payload['selectedIcon'] ?? null;
             $this->logoMatchFgColor = (bool) ($payload['logoMatchFgColor'] ?? false);
-            $this->existingFileUrl = $payload['existingFileUrl'] ?? null;
-            $this->existingLogo = $payload['existingLogo'] ?? null;
 
             if ($this->step >= 2) {
                 $this->generatePreview();
@@ -733,7 +775,7 @@ class QrCodeBuilder extends Component
         }
 
         $rules = match (QrCodeType::from($this->type)) {
-            QrCodeType::Url => ['url' => 'required|url:http,https'],
+            QrCodeType::Url => ['url' => ['required', 'string', 'max:2048', new SafeDestinationUrl]],
             QrCodeType::Text => ['text' => 'required|string|max:2000'],
             QrCodeType::VCard => ['firstName' => 'required|string', 'lastName' => 'required|string'],
             QrCodeType::Wifi => ['ssid' => 'required|string'],
@@ -744,8 +786,10 @@ class QrCodeBuilder extends Component
             QrCodeType::Event => ['eventTitle' => 'required|string', 'eventStart' => 'required|string'],
             QrCodeType::Crypto => ['cryptoAddress' => 'required|string'],
             QrCodeType::Social => $this->getSocialValidationRules(),
-            QrCodeType::AppStore, QrCodeType::Menu => ['socialUrl' => 'required|url:http,https'],
-            QrCodeType::Pdf => $this->editing ? [] : ['pdfFile' => 'required|file|max:10240'],
+            QrCodeType::AppStore, QrCodeType::Menu => ['socialUrl' => ['required', 'string', 'max:2048', new SafeDestinationUrl]],
+            QrCodeType::Pdf => $this->editing ? [] : [
+                'pdfFile' => 'required|file|mimes:pdf|mimetypes:application/pdf|max:10240',
+            ],
             default => [],
         };
 
@@ -755,7 +799,14 @@ class QrCodeBuilder extends Component
     protected function getSocialValidationRules(): array
     {
         if (! empty($this->socialNetworks)) {
-            $rules = ['socialNetworks' => 'required|array|min:1'];
+            // socialNetworks is a public property, so the client can set it
+            // directly: every element has to be validated, not just the array.
+            $rules = [
+                'socialNetworks' => 'required|array|min:1|max:20',
+                'socialNetworks.*.platform' => ['required', 'string', Rule::in(array_keys(static::socialPlatforms()))],
+                'socialNetworks.*.identifier' => ['required', 'string', 'max:300'],
+                'socialNetworks.*.url' => ['required', 'string', 'max:2048', new SafeDestinationUrl],
+            ];
 
             if ($this->isDynamic && count($this->socialNetworks) > 1) {
                 $rules['socialHubTitle'] = 'required|string|max:255';
@@ -871,6 +922,8 @@ class QrCodeBuilder extends Component
     public function updatedLogoMatchFgColor(): void { $this->refreshPreview(); }
     public function updatedLogo(): void
     {
+        $this->validate($this->logoRules());
+
         $this->selectedIcon = null;
         $this->logoMatchFgColor = false;
         $this->refreshPreview();
@@ -943,6 +996,10 @@ class QrCodeBuilder extends Component
 
     public function save()
     {
+        if ($this->editing) {
+            $this->authorize('update', $this->qrCode);
+        }
+
         $this->validateStep();
 
         $user = auth()->user();
@@ -993,6 +1050,10 @@ class QrCodeBuilder extends Component
         if ($this->selectedIcon) {
             $logoPath = 'icons/qr-center-icons/' . $this->selectedIcon . '.svg';
         } elseif ($this->logo) {
+            // The security boundary: save() can be reached without the updated
+            // hook ever having run, so validate again before storing.
+            $this->validate($this->logoRules());
+
             $logoPath = $this->logo->store('logos', 'public');
         }
 
@@ -1054,9 +1115,9 @@ class QrCodeBuilder extends Component
         $isDynamicCapable = $qrType->isDynamic();
         $makeDynamic = $isDynamicCapable && ($this->isDynamic || $qrType === QrCodeType::Pdf);
 
+        // Ownership is assigned once, at creation: an update must never be able to
+        // move a QR code between accounts.
         $qrData = [
-            'user_id' => $user->id,
-            'team_id' => $user->current_team_id,
             'category_id' => $pendingData['category_id'],
             'name' => $pendingData['name'],
             'type' => $pendingData['type'],
@@ -1068,7 +1129,10 @@ class QrCodeBuilder extends Component
             $this->qrCode->update($qrData);
             $qr = $this->qrCode->fresh();
         } else {
-            $qr = QrCode::create($qrData);
+            $qr = QrCode::create($qrData + [
+                'user_id' => $user->id,
+                'team_id' => $user->current_team_id,
+            ]);
         }
 
         $qr->design()->updateOrCreate(

@@ -1,0 +1,196 @@
+================================================================================
+15 - MEDIUM - Session cookie and HTTP response hardening is missing in production
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Security misconfiguration - OWASP A05:2021
+Verified      : Configuration and templates read directly
+Affected files: .env.prod (no SESSION_SECURE_COOKIE; SESSION_ENCRYPT=false)
+                config/session.php:172 ('secure' => env('SESSION_SECURE_COOKIE'))
+                bootstrap/app.php (no security-header middleware, no TrustProxies)
+                resources/views/redirect/social-hub.blade.php:7-8
+                resources/views/redirect/password.blade.php:7
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+Several standard protections are simply not configured:
+
+a) **Session cookie is not marked Secure.** `config/session.php` reads
+   `env('SESSION_SECURE_COOKIE')`, and that variable is absent from .env.prod, so
+   the value is null and the cookie is issued without the `Secure` attribute -
+   even though APP_URL is https. Any plaintext request to the domain (a typed
+   hostname, an http link, a hostile network forcing one) sends the session
+   cookie in the clear.
+
+b) **Session payloads are not encrypted.** `SESSION_ENCRYPT=false` with
+   `SESSION_DRIVER=database`. Sessions therefore sit in the database as readable
+   serialized data. That matters more than usual here because
+   `SignupService::storeEmailSignup()` puts the **plaintext signup password** into
+   the session:
+
+       session([self::SESSION_KEY => [
+           'type' => 'email', 'name' => ..., 'email' => ...,
+           'password' => $data['password'],     // <-- plaintext, in the session store
+       ]]);
+
+   Anyone with read access to the sessions table - a SQL injection elsewhere, a
+   database backup, a support query - reads passwords of users mid-signup.
+
+c) **No security response headers.** There is no middleware adding
+   Content-Security-Policy, X-Content-Type-Options, Referrer-Policy,
+   X-Frame-Options or Strict-Transport-Security. A CSP in particular would have
+   blunted findings 3 and 4.
+
+d) **No TrustProxies configuration.** `bootstrap/app.php` never calls
+   `$middleware->trustProxies(...)`. Behind a load balancer or Cloudflare,
+   `request()->ip()` is the proxy's address, `$request->secure()` is false, and
+   generated URLs can use the wrong scheme. This also breaks any IP-keyed rate
+   limiting added for finding 10, and it makes the `ip_hash` unique-scan metric
+   collapse to a single value.
+
+e) **Third-party scripts on the public redirect pages.** Both redirect views pull
+   `https://cdn.tailwindcss.com` (and Font Awesome from cdnjs) at runtime. These
+   pages are the product's most-visited surface, reached by scanning a physical
+   code. A compromise or outage of those CDNs affects every scan, and the Tailwind
+   CDN build is explicitly not intended for production.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Session cookie interception over any plaintext request to the domain →
+  account takeover.
+* Plaintext passwords readable in the sessions table.
+* No defence-in-depth against injected script: with a CSP, the SVG upload and
+  `javascript:` href issues would be far harder to exploit.
+* Clickjacking of the dashboard and admin panel (no frame-ancestors / X-Frame-
+  Options).
+* Broken client-IP attribution behind a proxy, which undermines rate limiting and
+  analytics.
+* Supply-chain exposure of every QR landing page to two third-party CDNs.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Session configuration [.env.prod and .env.dev]
+
+        SESSION_SECURE_COOKIE=true
+        SESSION_ENCRYPT=true
+        SESSION_SAME_SITE=lax
+        SESSION_HTTP_ONLY=true
+
+    Note that the proxy domain (go.dynqr.com) is a different host from the app, so
+    leave SESSION_DOMAIN unset - do not widen the cookie to a parent domain.
+
+(2) Stop putting the plaintext password in the session
+    [app/Services/SignupService.php]
+
+        public function storeEmailSignup(array $data): void
+        {
+            session([self::SESSION_KEY => [
+                'type'     => 'email',
+                'name'     => $data['name'],
+                'email'    => $data['email'],
+                'password' => Hash::make($data['password']),   // hash immediately
+            ]]);
+        }
+
+    and in `createUserFromPendingSignup()`, bypass the `hashed` cast for the
+    already-hashed value:
+
+        $user = new User($attributes);
+        $user->forceFill(['password' => $pending['password']])->save();
+
+    (The `hashed` cast detects an existing bcrypt hash and will not re-hash it, so
+    a straight assignment also works - but being explicit here avoids depending on
+    that behaviour.)
+
+(3) Add a security-header middleware [app/Http/Middleware/SecurityHeaders.php]
+
+        public function handle(Request $request, Closure $next): Response
+        {
+            $response = $next($request);
+
+            $response->headers->set('X-Content-Type-Options', 'nosniff');
+            $response->headers->set('X-Frame-Options', 'DENY');
+            $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
+            $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+            if (app()->isProduction()) {
+                $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+            }
+
+            return $response;
+        }
+
+    Register it in bootstrap/app.php with `$middleware->web(append: [...])`.
+
+    Then add a CSP. Start in report-only mode to find violations, then enforce:
+
+        Content-Security-Policy:
+            default-src 'self';
+            script-src 'self';
+            style-src 'self' 'unsafe-inline';
+            img-src 'self' data: https:;
+            frame-ancestors 'none';
+            base-uri 'self';
+            form-action 'self'
+
+    Livewire works with this as long as its asset route is same-origin, which it
+    is. The QR previews are `data:` image URIs, hence `data:` in img-src.
+
+(4) Configure trusted proxies [bootstrap/app.php]
+
+        $middleware->trustProxies(
+            at: env('TRUSTED_PROXIES', '127.0.0.1'),
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO,
+        );
+
+    Set TRUSTED_PROXIES to the actual proxy ranges - never to '*' on a
+    public-facing host, because that lets a client spoof its own IP through
+    X-Forwarded-For.
+
+(5) Self-host the CSS/fonts used by the redirect views. The project already
+    builds assets with Vite; compiling a small stylesheet for these two pages
+    removes the CDN dependency and makes a strict CSP straightforward.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    curl -sI https://dynqr.com/login | grep -iE 'set-cookie|strict-transport|content-security|x-frame'
+
+Expect `Secure; HttpOnly; SameSite=Lax` on the session cookie, plus the headers
+above. Also assert in a feature test that the session cookie config is secure
+when the environment is production.
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-614 Sensitive Cookie Without 'Secure' Attribute
+CWE-522 Insufficiently Protected Credentials
+CWE-1021 Improper Restriction of Rendered UI Layers (clickjacking)
+OWASP Secure Headers Project
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+SESSION_ENCRYPT=true and SESSION_SECURE_COOKIE=true set in .env.prod, with
+SameSite and HttpOnly made explicit; .env.example ships safe defaults.
+SignupService no longer keeps a plaintext password in the session - it is hashed
+on the way in and forceFilled on user creation. Added a SecurityHeaders
+middleware (nosniff, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy,
+HSTS on secure requests) and TrustProxies configuration.
+
+CSP is sent as Content-Security-Policy-REPORT-ONLY by default, switchable with
+CSP_ENFORCE=true. It is deliberately not enforced yet: the layouts carry inline
+scripts (partials/theme-init, partials/exclusive-dropdown), Alpine needs
+'unsafe-eval', and the two redirect views load cdn.tailwindcss.com. Removing
+those three things is the remaining work before flipping the flag.
+
+Files: app/Http/Middleware/SecurityHeaders.php, bootstrap/app.php, config/app.php
+       app/Services/SignupService.php, .env.example, .env.prod, .env.dev
+Tests: tests/Feature/Security/AuthHardeningTest.php (headers + pending signup)
+
+Full suite after the change: 130 passed (367 assertions).

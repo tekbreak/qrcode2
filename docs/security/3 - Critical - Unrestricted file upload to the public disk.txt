@@ -1,0 +1,196 @@
+================================================================================
+3 - CRITICAL - Unrestricted file upload into the publicly served storage disk
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Unrestricted upload of file with dangerous type - OWASP A03/A05
+Verified      : Yes - reproduced against the test suite (see "Evidence")
+Affected files: app/Livewire/QrCodes/QrCodeBuilder.php:103 ($logo property),
+                                                      :959-967 (buildPendingData)
+                app/Livewire/QrCodes/QrCodeBuilder.php:748 (pdfFile rule)
+                config/qrcode.php:57-58 (logo_max_size / logo_max_dimension -
+                                         defined but never used anywhere)
+                config/filesystems.php:41-47 (public disk -> public/storage)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+The QR builder's logo upload has **no validation at all**. `public $logo` is a
+Livewire file-upload property, and the save path stores whatever arrived:
+
+    if ($this->selectedIcon) {
+        $logoPath = 'icons/qr-center-icons/' . $this->selectedIcon . '.svg';
+    } elseif ($this->logo) {
+        $logoPath = $this->logo->store('logos', 'public');   // <-- no rules
+    }
+
+`validateContentByType()` never mentions `logo`. There is no `mimes`, no `image`,
+no `max`, no dimension check - even though config/qrcode.php defines
+`logo_max_size` and `logo_max_dimension`, which a grep shows are referenced
+nowhere in the codebase.
+
+The PDF upload is only marginally better - `'pdfFile' => 'required|file|max:10240'`
+has no `mimes:pdf`, so any file type up to 10 MB is accepted, and it is stored on
+the same public disk with its original extension and then exposed via
+`asset('storage/' . $filePath)`.
+
+The `public` disk is `storage/app/public`, symlinked to `public/storage` and
+served directly by the web server - no Laravel routing, no `Content-Security-
+Policy`, no `Content-Disposition`, no sandbox. (Laravel's own `ServeFile`
+controller sets `default-src 'none'; sandbox` for private disks; nothing does
+that for this one.)
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+Uploading an SVG containing script, and a PHP file, through the builder:
+
+    [POC4] files accepted into the public disk:
+      ["logos/78AMw85Y2J3lT02vXbP31cDgjZHKA5zhmADcbzj7.svg",
+       "logos/fcvUzAAzqkMz7sN2sIvsLmcsjlAC7siK4hAsA3Ht.php"]
+
+Both land under storage/app/public/logos/, i.e. https://<app>/storage/logos/<name>.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Remote code execution (worst case). `shell.php` is written into a directory
+  served by the web server. Any nginx/Apache config that routes `\.php$` to
+  PHP-FPM by location rather than by exact front-controller match - a very common
+  default - will execute it. Full application compromise: .env, database, Stripe
+  keys, all tenants' data.
+* Stored cross-site scripting (certain, no server-config assumptions). SVG is
+  rendered as an active document by browsers. `https://<app>/storage/logos/x.svg`
+  runs attacker script on the application's own origin, so it can read the
+  session cookie context, call authenticated endpoints, and pivot to the admin
+  panel if an administrator opens the link. The same applies to an uploaded
+  `.html` file.
+* Malware and phishing hosting on the platform's domain and TLS certificate,
+  reachable from a QR code - which is exactly the flow this product exists for.
+* Storage exhaustion: no size cap at all on logos.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Validate the logo on upload AND on save
+    [app/Livewire/QrCodes/QrCodeBuilder.php]
+
+        protected function logoRules(): array
+        {
+            return [
+                'logo' => [
+                    'nullable',
+                    'image',                                   // real image, checked by getimagesize
+                    'mimes:png,jpg,jpeg,webp',                 // note: SVG deliberately excluded
+                    'max:' . config('qrcode.logo_max_size'),   // KB, already configured: 2048
+                    'dimensions:max_width=' . config('qrcode.logo_max_dimension')
+                        . ',max_height=' . config('qrcode.logo_max_dimension'),
+                ],
+            ];
+        }
+
+        public function updatedLogo(): void
+        {
+            $this->validate($this->logoRules());   // fail fast, before the temp file is kept
+
+            $this->selectedIcon = null;
+            $this->logoMatchFgColor = false;
+            $this->refreshPreview();
+        }
+
+    and in `buildPendingData()`, before storing:
+
+        } elseif ($this->logo) {
+            $this->validate($this->logoRules());
+            $logoPath = $this->logo->store('logos', 'public');
+        }
+
+    Validating in both places matters: `updatedLogo()` is a convenience for the
+    user, `buildPendingData()` is the security boundary, because a client can
+    reach save() without ever triggering the `updated` hook.
+
+    If user-supplied SVG logos are a product requirement, do not accept them as
+    SVG. Rasterise on upload and store only the resulting PNG, discarding the
+    original. Never serve attacker-supplied SVG from the app origin.
+
+(2) Validate the PDF upload properly [same file, validateContentByType()]
+
+        QrCodeType::Pdf => $this->editing ? [] : [
+            'pdfFile' => 'required|file|mimes:pdf|mimetypes:application/pdf|max:10240',
+        ],
+
+    Use both `mimes` (extension) and `mimetypes` (sniffed content) - one checks
+    what the file claims to be, the other what it actually is.
+
+(3) Stop serving user uploads from the application origin
+    Best: move `logos/` and `uploads/` to a separate storage domain or to S3 with
+    `Content-Disposition: attachment` and a restrictive content type.
+
+    Minimum, if they must stay local - add to the web server config for the
+    /storage location:
+
+        add_header Content-Security-Policy "default-src 'none'; sandbox" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        location ~* ^/storage/.*\.(php|phtml|phar|html?|svg)$ { return 404; }
+
+    and make sure PHP execution is confined to the front controller:
+
+        location ~ \.php$ {
+            try_files $uri =404;                # do not pass non-existent paths to FPM
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            ...
+        }
+
+(4) Normalise stored filenames
+    `store()` already randomises the basename but keeps the client's extension.
+    Derive the extension from the validated MIME type instead:
+
+        $extension = match ($this->logo->getMimeType()) {
+            'image/png'  => 'png',
+            'image/jpeg' => 'jpg',
+            'image/webp' => 'webp',
+        };
+        $logoPath = $this->logo->storeAs('logos', Str::uuid() . '.' . $extension, 'public');
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_logo_upload_rejects_non_images(): void
+    {
+        Storage::fake('public');
+
+        Livewire::actingAs($user)->test(QrCodeBuilder::class)
+            ->set('type', 'url')->set('name', 'x')->set('url', 'https://example.com')
+            ->set('logo', UploadedFile::fake()->createWithContent('shell.php', '<?php'))
+            ->call('save')
+            ->assertHasErrors('logo');
+
+        $this->assertEmpty(Storage::disk('public')->allFiles('logos'));
+    }
+
+Also test .svg, .html, an oversized PNG, and an over-large-dimension PNG.
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+OWASP A03:2021 Injection / A05:2021 Security Misconfiguration
+CWE-434 Unrestricted Upload of File with Dangerous Type
+CWE-79 Cross-site Scripting (via SVG)
+OWASP File Upload Cheat Sheet
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Added logoRules() - image + mimes:png,jpg,jpeg,webp + mimetypes + max size from
+config('qrcode.logo_max_size') + dimensions from logo_max_dimension - applied in
+updatedLogo() and again in buildPendingData() before store(), because save() can
+be reached without the updated hook running. The PDF upload now requires
+mimes:pdf and mimetypes:application/pdf. The previously unused logo_max_size /
+logo_max_dimension config values are now the source of truth.
+
+NOT DONE (needs server access): the web-server rules denying execution and
+inline rendering under /storage. Still recommended - see the proposal above.
+
+Files: app/Livewire/QrCodes/QrCodeBuilder.php
+Tests: tests/Feature/Security/UploadAndUrlTest.php (4 upload cases)
+
+Full suite after the change: 130 passed (367 assertions).

@@ -1,0 +1,189 @@
+================================================================================
+10 - HIGH - No rate limiting anywhere: login, magic links, password reset, API
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Improper restriction of excessive authentication attempts
+                - OWASP A07:2021
+Verified      : Yes - 60 consecutive failed logins, none throttled (see "Evidence")
+Affected files: app/Livewire/Auth/Login.php:18-34
+                app/Http/Controllers/Auth/MagicLinkController.php:15-34
+                app/Livewire/Auth/ForgotPassword.php:14-26
+                routes/web.php:43-44, routes/api.php
+                bootstrap/app.php:20-32 (no throttleApi(), no custom limiters)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+The only throttled route in the entire application is the e-mail verification
+link (`throttle:6,1` in routes/web.php). Everything else is unlimited:
+
+* **Login.** `Login::login()` calls `Auth::attempt()` directly with no
+  RateLimiter, no lockout, no backoff. Laravel's own starter kits wrap this in
+  `RateLimiter::tooManyAttempts()`; that code is absent here.
+* **Magic links.** POST /auth/magic-link takes an e-mail address and sends mail.
+  Unauthenticated, unthrottled, no captcha.
+* **Password reset.** ForgotPassword has no throttle of its own; it relies solely
+  on the password broker's per-address `created_at` window, which does not stop
+  enumeration across many addresses.
+* **API.** `bootstrap/app.php` never calls `$middleware->throttleApi()`, and
+  `route:list` confirms the api routes carry only
+  `["api", "Authenticate:sanctum"]` - no throttle middleware at all.
+* **Short-link password gate.** Covered separately in finding 11.
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+    [POC5] 60 wrong-password attempts; attempts NOT answered with a credential
+           error (i.e. throttled): 0
+
+All sixty attempts were processed normally. There is no lockout at any count.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Credential stuffing and brute force against every account, at whatever rate the
+  server sustains. The application's own password policy is `min:8` on login and
+  `Password::defaults()` on change, so many accounts will fall to a modest list.
+* Mail-based abuse: /auth/magic-link and the reset form can be driven in a loop to
+  bomb a victim's inbox, and - more damaging for the business - to burn the
+  Mailjet sending quota and reputation of noreply@dynqr.com.
+* User enumeration through timing: MagicLinkController returns the same message
+  for both cases (good), but the branch that sends mail does measurably more work.
+  Without throttling, that difference is trivially measurable.
+* API abuse: unlimited authenticated calls to the QR generation endpoints, each of
+  which does per-pixel GD work (`applyFgColorGd` loops over every pixel) and, for
+  SVG logos, shells out to ImageMagick. A handful of concurrent clients can
+  saturate CPU - a cheap denial of service.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Throttle the login component itself. Livewire actions do not pass through
+    route middleware, so the limiter belongs in the action
+    [app/Livewire/Auth/Login.php]:
+
+        use Illuminate\Support\Facades\RateLimiter;
+        use Illuminate\Validation\ValidationException;
+
+        protected function throttleKey(): string
+        {
+            return Str::transliterate(Str::lower($this->email) . '|' . request()->ip());
+        }
+
+        public function login()
+        {
+            $this->validate([
+                'email'    => 'required|email',
+                'password' => 'required|min:8',
+            ]);
+
+            if (RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+                $seconds = RateLimiter::availableIn($this->throttleKey());
+
+                throw ValidationException::withMessages([
+                    'email' => __('auth.throttle', ['seconds' => $seconds,
+                                                    'minutes' => ceil($seconds / 60)]),
+                ]);
+            }
+
+            if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
+                RateLimiter::hit($this->throttleKey(), 60);
+                $this->addError('email', __('auth.failed'));
+
+                return;
+            }
+
+            RateLimiter::clear($this->throttleKey());
+            session()->regenerate();
+
+            return redirect()->intended(route('dashboard'));
+        }
+
+    Key on e-mail *and* IP: keying on IP alone lets one attacker spread across
+    proxies, keying on e-mail alone lets an attacker lock a victim out.
+
+(2) Throttle the mail-sending routes [routes/web.php]
+
+        Route::post('/auth/magic-link', [MagicLinkController::class, 'send'])
+            ->middleware('throttle:5,10')
+            ->name('auth.magic-link.send');
+
+        Route::get('/auth/magic-link/{user}', [MagicLinkController::class, 'verify'])
+            ->middleware('throttle:10,1')
+            ->name('auth.magic-link.verify');
+
+    and add a per-address limiter inside ForgotPassword::sendResetLink() in the
+    same shape as (1).
+
+(3) Enable API throttling [bootstrap/app.php]
+
+        ->withMiddleware(function (Middleware $middleware): void {
+            $middleware->throttleApi('api');
+            ...
+        })
+
+    and define a tiered limiter in a service provider:
+
+        RateLimiter::for('api', fn (Request $request) =>
+            Limit::perMinute(60)->by($request->user()?->id ?: $request->ip()));
+
+        RateLimiter::for('qr-render', fn (Request $request) =>
+            Limit::perMinute(20)->by($request->user()?->id ?: $request->ip()));
+
+    Apply `throttle:qr-render` to the download/generation endpoints specifically -
+    they are the expensive ones.
+
+(4) Add a global fallback limiter on the web group so any future unthrottled
+    action still has a ceiling, and make sure TrustProxies is configured
+    (bootstrap/app.php currently sets none) so `request()->ip()` is the client's
+    address and not the load balancer's - otherwise every limiter keyed on IP
+    buckets all users together.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_login_locks_out_after_five_failures(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            Livewire::test(Login::class)
+                ->set('email', $user->email)->set('password', 'wrong')->call('login');
+        }
+
+        Livewire::test(Login::class)
+            ->set('email', $user->email)->set('password', 'wrong')->call('login')
+            ->assertHasErrors('email');   // and the message is auth.throttle
+
+        // correct credentials are also refused while the lockout holds
+    }
+
+    public function test_api_is_rate_limited(): void
+    {
+        for ($i = 0; $i < 61; $i++) { $response = $this->getJson('/api/qr-codes'); }
+        $response->assertStatus(429);
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-307 Improper Restriction of Excessive Authentication Attempts
+CWE-770 Allocation of Resources Without Limits or Throttling
+OWASP Authentication Cheat Sheet
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Login::login() is rate limited at 5 attempts per minute keyed on email+IP, and
+clears on success. ForgotPassword::sendResetLink() is limited to 5 per 10 minutes
+on the same key shape. Route throttles added to magic-link send (5/10m) and
+verify (10/m), choose-plan (10/m) and language switch (30/m). throttleApi() is
+enabled in bootstrap/app.php with named limiters (api 60/m, qr-render 20/m,
+redirect 120/m, link-unlock 10/m) defined in a new RateLimitServiceProvider, and
+the expensive download endpoint uses throttle:qr-render. TrustProxies is now
+configured so IP-keyed limits see the real client address rather than the proxy's.
+
+Files: app/Livewire/Auth/Login.php, app/Livewire/Auth/ForgotPassword.php
+       app/Providers/RateLimitServiceProvider.php, bootstrap/providers.php
+       bootstrap/app.php, routes/web.php, routes/api.php, routes/redirect.php
+Tests: tests/Feature/Security/AuthHardeningTest.php (4 cases)
+
+Full suite after the change: 130 passed (367 assertions).

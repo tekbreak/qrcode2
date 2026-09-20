@@ -29,7 +29,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'selected_plan',
         'plan_selected_at',
         'account_deletion_scheduled_at',
-        'current_team_id',
     ];
 
     protected $hidden = [
@@ -77,10 +76,17 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Category::class);
     }
 
-    public function currentTeam()
+    public function currentTeam(): ?Team
     {
+        // Resolve through the membership relation so a stale or tampered
+        // current_team_id can never point at a team the user does not belong to.
         if ($this->current_team_id) {
-            return Team::find($this->current_team_id);
+            $team = $this->teams()->whereKey($this->current_team_id)->first()
+                ?? $this->ownedTeams()->whereKey($this->current_team_id)->first();
+
+            if ($team) {
+                return $team;
+            }
         }
 
         return $this->ownedTeams()->first() ?? $this->teams()->first();

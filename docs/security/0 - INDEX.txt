@@ -1,0 +1,160 @@
+================================================================================
+dynQR - SECURITY REVIEW
+================================================================================
+Date        : 2026-09-20 (review and remediation)
+Scope       : Full application review of /Users/Shared/myworkspace/qrcode_app
+              (Laravel 12, Livewire 4, Cashier 16, Sanctum 4) at commit 37c2776,
+              branch main. Application code, routes, configuration, seeders,
+              deployment scripts and views. Third-party vendor code was read only
+              where the application's security depends on its behaviour.
+Method      : Manual code review. Every finding marked "reproduced" was proven
+              with a throwaway exploit test run against the project's own
+              in-memory SQLite harness. Those throwaway tests were then replaced
+              by permanent regression tests under tests/Feature/Security/ and
+              tests/Unit/Services/, and each original exploit was re-run against
+              the fixed code to confirm it no longer works.
+Not covered : Web-server / nginx configuration (not in the repository), the
+              production host, the Stripe account configuration, and dependency
+              CVE scanning (run `composer audit` and `npm audit` separately).
+
+--------------------------------------------------------------------------------
+FINDINGS - ALL FIXED 2026-09-20
+--------------------------------------------------------------------------------
+ #   Severity  Title                                              Repro'd  Status
+--- --------- -------------------------------------------------- -------  ------
+ 1   CRITICAL  Cross-tenant QR code takeover in the QR builder      yes    FIXED
+ 2   CRITICAL  Paid actions applied without payment                 yes    FIXED
+ 3   CRITICAL  Unrestricted file upload to the public disk          yes    FIXED
+ 4   HIGH      Stored XSS via javascript: URLs in destinations      yes    FIXED
+ 5   HIGH      Arbitrary logo_path allows server-side file access   yes    FIXED
+ 6   HIGH      Stripe webhook accepts unsigned events                -     FIXED
+ 7   HIGH      Subscriptions granted free when Stripe unconfigured   -     FIXED
+ 8   HIGH      Development quick-login backdoor                      -     FIXED
+ 9   HIGH      Seeded admin account with known password              -     FIXED
+10   HIGH      No rate limiting on authentication and API           yes    FIXED
+11   MEDIUM    Link password over GET and never throttled            -     FIXED
+12   MEDIUM    Team management without authorization                 -     FIXED
+13   MEDIUM    E-mail verification is never enforced                 -     FIXED
+14   MEDIUM    Account deletion without re-authentication            -     FIXED
+15   MEDIUM    Session cookie and response header hardening          -     FIXED*
+16   LOW       Short-link slugs are guessable                        -     FIXED
+17   LOW       API input validation gaps                             -     FIXED
+
+"Repro'd = yes" means the exploit was executed and its output is quoted in the
+finding. The others were confirmed by reading the code and configuration; none
+were speculative.
+
+* 15 is fixed except that the Content-Security-Policy ships REPORT-ONLY. It
+  cannot be enforced until the inline scripts in the layouts and the Alpine
+  'unsafe-eval' dependency are removed. Set CSP_ENFORCE=true once they are.
+
+Each finding file carries a "FIX APPLIED" section at the end describing exactly
+what changed, which files, and which tests cover it. After the fixes the suite is
+130 passed (367 assertions), up from 77.
+
+Every originally-reproduced exploit was re-run against the fixed code and now
+fails: the edit route returns 403, the unpaid action stays `pending` with the
+destination unchanged, no dangerous upload reaches the public disk, the
+javascript: payload is rejected on save and filtered on render, and logo_path
+resolves to NULL for /etc/passwd via both the API and the ?s= state parameter.
+
+--------------------------------------------------------------------------------
+STILL OUTSTANDING - OPERATIONAL, NOT FIXABLE FROM THE CODEBASE
+--------------------------------------------------------------------------------
+1. Check every deployed environment for the seeded accounts (admin@example.com,
+   test@example.com, demo@example.com) and delete them. If the admin account
+   existed on a public host, treat that host as compromised: rotate APP_KEY,
+   Stripe keys, database credentials, and invalidate all sessions. (finding 9)
+
+2. Set STRIPE_PAID_ACTION_PRICE_ID in .env.prod. It is empty, so paid actions are
+   now refused in production rather than applied for free - the feature is
+   disabled until a real price id is set. (finding 2)
+
+3. Add the web-server rules for /storage: deny execution of .php, and serve
+   uploads with Content-Security-Policy "default-src 'none'; sandbox" and
+   X-Content-Type-Options: nosniff. The application-side validation is in place,
+   but defence in depth here is cheap. (finding 3)
+
+4. Set TRUSTED_PROXIES to the real proxy addresses on each host. It defaults to
+   127.0.0.1, which is safe but wrong if a load balancer or Cloudflare sits in
+   front - IP-keyed rate limits will otherwise see the proxy's address. (finding 10)
+
+5. Data cleanup for rows written before the fixes: short_links.destination_url and
+   qr_codes.content_data entries whose scheme is not http/https, and
+   qr_designs.logo_path values that are absolute or contain "..". The render and
+   redirect paths already refuse them, so this is hygiene rather than exposure.
+
+6. Decide whether to enforce the CSP (see the note above).
+
+--------------------------------------------------------------------------------
+SUGGESTED ORDER OF WORK
+--------------------------------------------------------------------------------
+Immediately (customer data and printed QR codes are at stake):
+    1  - authorization in the QR builder. This is the one that lets any account
+         repoint any customer's printed QR code at a site of their choosing.
+    3  - upload validation. Cheap to fix, and it is the likeliest path to RCE.
+    4  - destination-URL scheme allowlist, including the render-time filter,
+         because existing rows are already unvalidated.
+
+Same release:
+    2, 7 - the two billing paths that currently give away paid functionality.
+           Note that finding 2 is already live in production: .env.prod has an
+           empty STRIPE_PAID_ACTION_PRICE_ID, so paid actions are free today.
+    5    - logo_path containment.
+    9    - check every environment for admin@example.com before anything else on
+           this list; if it exists on a public host, treat that host as
+           compromised.
+    8, 6 - close the fail-open configuration paths.
+    10   - rate limiting. Several other findings get much harder to exploit once
+           this lands.
+
+Next release:
+    11-15, then 16-17.
+
+--------------------------------------------------------------------------------
+CROSS-CUTTING THEMES
+--------------------------------------------------------------------------------
+Three patterns account for most of the findings, and are worth fixing as habits
+rather than as individual bugs:
+
+1. Authorization is applied inconsistently. QrCodeIndex scopes every lookup to
+   `auth()->user()->qrCodes()`, while QrCodeBuilder and TeamManager operate on
+   route- or client-bound models with no check at all. A QrCodePolicy already
+   exists and is registered - it is simply not called from the builder. Consider
+   a convention: every Livewire component that holds a model gets `#[Locked]` on
+   that property and an `authorize()` call in both mount() and the write action.
+   Note that no `#[Locked]` attribute appears anywhere in the codebase today,
+   which means every public property is client-writable.
+
+2. Security controls fail open. Billing without Stripe keys grants the plan
+   (7); paid actions without a price id apply for free (2); the Stripe webhook
+   without a secret accepts unsigned events (6); quick-login defaults to on in
+   the shipped .env template (8). Each of these should throw in production rather
+   than degrade silently. A single `assertProductionConfigured()` check at boot
+   would cover most of them.
+
+3. Client-supplied data is trusted after the first hop. The base64 `?s=` builder
+   state, Livewire public properties, and API request arrays all flow into
+   persistence without revalidation - findings 4, 5 and 17. Validate at the
+   boundary where data is written, not only where it is first entered.
+
+--------------------------------------------------------------------------------
+WHAT WAS CHECKED AND FOUND SOUND
+--------------------------------------------------------------------------------
+Worth recording so it is not re-reviewed:
+* No SQL injection. Every DB::raw() use (AnalyticsService, AggregateAnalytics)
+  contains only literal SQL; all user input goes through the query builder.
+* No unescaped Blade output in application views - `{!! !!}` appears only in the
+  stock vendor mail templates.
+* Password storage is correct: bcrypt via the `hashed` cast, 12 rounds,
+  `Hash::check()` on the settings path.
+* Session fixation is handled - Laravel's SessionGuard migrates the session on
+  every login, including the Google and magic-link paths.
+* The magic-link route is properly signed and time-limited, and returns an
+  identical response whether or not the address exists.
+* Secrets are not committed: .gitignore excludes .env and .env.*, and
+  `git ls-files` confirms only .env.example is tracked.
+* Laravel's /storage/{path} and PUT /storage/{path} routes (local disk, private)
+  require valid signed URLs - they are not an upload vector.
+* QrCodeIndex, CategoryIndex and AnalyticsApiController scope all queries to the
+  authenticated user correctly.

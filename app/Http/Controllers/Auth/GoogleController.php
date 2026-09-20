@@ -17,15 +17,36 @@ class GoogleController extends Controller
 
     public function callback()
     {
-        $googleUser = Socialite::driver('google')->user();
+        try {
+            $googleUser = Socialite::driver('google')->user();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('login')->with('error', __('auth.failed'));
+        }
+
+        // Google will happily return an unverified address; without this check
+        // anyone could claim someone else's email through the provider.
+        if (! ($googleUser->user['email_verified'] ?? false)) {
+            return redirect()->route('login')->with('error', __('auth.google_email_unverified'));
+        }
 
         $user = User::where('email', $googleUser->getEmail())->first();
 
         if ($user) {
-            $user->update([
-                'google_id' => $googleUser->getId(),
-                'avatar' => $googleUser->getAvatar(),
-            ]);
+            // Only an account already linked to this Google identity may be
+            // signed in here. Linking a password account by matching addresses
+            // is the classic OAuth account-takeover path, so that has to happen
+            // from an authenticated session instead.
+            if ($user->google_id !== null && $user->google_id !== $googleUser->getId()) {
+                return redirect()->route('login')->with('error', __('auth.failed'));
+            }
+
+            if ($user->google_id === null) {
+                return redirect()->route('login')->with('error', __('auth.link_google_from_settings'));
+            }
+
+            $user->update(['avatar' => $googleUser->getAvatar()]);
 
             Auth::login($user, remember: true);
 

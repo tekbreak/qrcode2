@@ -5,11 +5,17 @@ namespace App\Livewire\Analytics;
 use App\Enums\Feature;
 use App\Models\QrCode;
 use App\Services\AnalyticsService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 class AnalyticsIndex extends Component
 {
+    use AuthorizesRequests;
+
+    #[Locked]
     public ?int $qrCodeId = null;
+
     public string $period = '30d';
 
     public function mount(?QrCode $qrCode = null)
@@ -21,6 +27,8 @@ class AnalyticsIndex extends Component
         }
 
         if ($qrCode?->exists) {
+            $this->authorize('view', $qrCode);
+
             $this->qrCodeId = $qrCode->id;
         }
 

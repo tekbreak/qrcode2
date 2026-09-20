@@ -22,12 +22,14 @@
         <main class="flex-1 space-y-3">
             @foreach($networks as $network)
                 @php
-                    $meta = $platforms[$network['platform']] ?? $platforms['custom'];
+                    $meta = $platforms[$network['platform'] ?? 'custom'] ?? $platforms['custom'];
                     $label = $meta['label'] ?? 'Link';
+                    $href = \App\Support\Url::safeOrNull($network['url'] ?? null);
                 @endphp
-                <a href="{{ $network['url'] }}"
+                @continue(! $href)
+                <a href="{{ $href }}"
                    class="group flex items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99]"
-                   rel="noopener noreferrer">
+                   rel="noopener noreferrer nofollow">
                     <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg {{ $meta['icon_color'] ?? 'text-white' }}"
                           style="{{ $meta['style'] ?? 'background-color:#6B7280' }}">
                         <i class="{{ $meta['icon'] ?? 'fa-solid fa-link' }}"></i>

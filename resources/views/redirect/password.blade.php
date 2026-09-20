@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
     <title>Password Required</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -18,7 +19,8 @@
             <div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ $error }}</div>
         @endif
 
-        <form method="GET" action="" class="mt-6">
+        <form method="POST" action="{{ route('redirect.unlock', $slug) }}" class="mt-6">
+            @csrf
             <input name="password" type="password" placeholder="Enter password" required autofocus
                    class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
             <button type="submit" class="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">

@@ -1,0 +1,149 @@
+================================================================================
+13 - MEDIUM - E-mail verification is implemented but never enforced
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Identification and authentication failure - OWASP A07:2021
+Verified      : Confirmed against `php artisan route:list` - no route carries the
+                `verified` middleware
+Affected files: app/Models/User.php:17 (implements MustVerifyEmail)
+                routes/web.php:47-93 (no 'verified' middleware anywhere)
+                app/Services/SignupService.php:162-181 (queueVerificationEmail)
+                app/Http/Controllers/Auth/MagicLinkController.php:42-44
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+`User implements MustVerifyEmail`, a verification mail is queued after e-mail
+signup, and a `verification.verify` route exists - but no route in the
+application requires verification. Every authenticated group is:
+
+    Route::middleware('auth')->group(...);
+    Route::middleware(['auth', 'plan.selected'])->group(...);
+
+`verified` appears nowhere. A user who never opens the verification mail has full
+access: create QR codes, publish short links on the platform's domain, use the
+API, subscribe, and (on the right plan) manage teams.
+
+Two related weaknesses in the same area:
+
+* MagicLinkController::verify() marks the address verified as a side effect of
+  logging in:
+
+      if (! $user->email_verified_at) {
+          $user->markEmailAsVerified();
+      }
+
+  That is defensible - the user proved control of the mailbox by following the
+  link - but it means verification state can be reached through a path that does
+  not require the password, so it should not be the only signal used later.
+
+* GoogleController::callback() links a Google identity to any existing local
+  account purely by matching e-mail address, with no check of the provider's
+  `verified_email` claim and no confirmation from the account owner.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Anyone can register with somebody else's address and operate an account under
+  it. Short links and QR codes created that way are attributable to a person who
+  never signed up.
+* Abuse and spam accounts are free to create at volume; there is no mailbox
+  ownership cost.
+* Notifications, billing receipts and the account-deletion warning go to an
+  address that was never confirmed, so a typo silently sends another person's
+  data elsewhere.
+* Support and abuse handling cannot rely on the e-mail column meaning anything.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Require verification on the application routes [routes/web.php]
+
+        Route::middleware(['auth', 'verified', 'plan.selected'])->group(function () {
+            Route::get('/dashboard', Dashboard::class)->name('dashboard');
+            Route::get('/qr-codes', QrCodeIndex::class)->name('qr-codes.index');
+            ...
+        });
+
+    Keep /billing and /settings outside the `verified` group if you want unverified
+    users to be able to fix their address or manage a subscription - but publishing
+    (QR codes, short links, bulk, API) should require a verified mailbox.
+
+(2) Add a verification notice route and a resend endpoint, both throttled:
+
+        Route::get('/email/verify', fn () => view('auth.verify-email'))
+            ->middleware('auth')->name('verification.notice');
+
+        Route::post('/email/verification-notification', function (Request $request) {
+            $request->user()->sendEmailVerificationNotification();
+
+            return back()->with('status', 'verification-link-sent');
+        })->middleware(['auth', 'throttle:6,1'])->name('verification.send');
+
+    The `verified` middleware redirects to `verification.notice`, so that route
+    must exist before (1) is enabled.
+
+(3) Protect the API too. Sanctum tokens issued to an unverified user should not
+    reach the publishing endpoints:
+
+        Route::middleware(['auth:sanctum', 'verified'])->group(function () { ... });
+
+(4) Harden the Google account linking [app/Http/Controllers/Auth/GoogleController.php]
+
+        $googleUser = Socialite::driver('google')->user();
+
+        if (! ($googleUser->user['email_verified'] ?? false)) {
+            return redirect()->route('login')->with('error', __('auth.google_email_unverified'));
+        }
+
+        $user = User::where('email', $googleUser->getEmail())->first();
+
+        if ($user && ! $user->google_id) {
+            // An existing local (password) account. Do not silently link it -
+            // require the user to sign in and connect Google from settings.
+            return redirect()->route('login')->with('error', __('auth.link_google_from_settings'));
+        }
+
+    Silent linking by e-mail address is the standard OAuth account-takeover
+    pattern; requiring an authenticated session to connect a provider removes it.
+
+(5) Verify existing data: report how many users have `email_verified_at IS NULL`
+    before enabling (1), and decide whether to grandfather them or prompt them.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_unverified_users_cannot_create_qr_codes(): void
+    {
+        $user = User::factory()->unverified()->create(['plan_selected_at' => now()]);
+
+        $this->actingAs($user)
+            ->get('/qr-codes/create')
+            ->assertRedirect(route('verification.notice'));
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-287 Improper Authentication
+OWASP A07:2021 Identification and Authentication Failures
+Laravel: https://laravel.com/docs/verification
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Publishing surfaces (dashboard, qr-codes, analytics, teams) are now behind the
+`verified` middleware, with billing and settings deliberately left reachable so an
+unverified user can still fix their address or manage a plan. Added a VerifyEmail
+Livewire component at /email/verify (verification.notice) with a rate-limited
+resend. The API group requires `verified` too. GoogleController now rejects an
+unverified Google email and refuses to sign in to an existing local account that
+is not already linked to that Google id - silent linking by matching email
+address was an account-takeover path.
+
+Files: routes/web.php, routes/api.php, app/Livewire/Auth/VerifyEmail.php
+       resources/views/livewire/auth/verify-email.blade.php
+       app/Http/Controllers/Auth/GoogleController.php, lang/{en,es}/auth.php
+Tests: tests/Feature/Security/AuthHardeningTest.php
+
+Full suite after the change: 130 passed (367 assertions).

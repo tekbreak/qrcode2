@@ -1,0 +1,212 @@
+================================================================================
+12 - MEDIUM - Team management actions have no authorization, and users are added
+              to teams without consent
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Missing function-level access control - OWASP A01:2021
+Verified      : Code read; no policy or role check exists on any team action
+Affected files: app/Livewire/Teams/TeamManager.php:45-87
+                app/Models/User.php:80-87 (currentTeam)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+Every mutating action in TeamManager operates on `$this->team` - the acting
+user's current team - with no check of what role that user holds:
+
+    public function inviteMember()
+    {
+        $this->validate(['inviteEmail' => 'required|email']);
+
+        if (! $this->team) return;
+
+        $invitee = User::where('email', $this->inviteEmail)->first();
+        ...
+        $this->team->users()->attach($invitee->id, ['role' => 'member']);
+    }
+
+    public function updateRole(int $userId, string $role)
+    {
+        if (! $this->team || $userId === $this->team->owner_id) return;
+        if (! in_array($role, ['admin', 'member'])) return;
+
+        $this->team->users()->updateExistingPivot($userId, ['role' => $role]);
+    }
+
+    public function removeMember(int $userId)
+    {
+        if (! $this->team || $userId === $this->team->owner_id) return;
+
+        $this->team->users()->detach($userId);
+        ...
+    }
+
+The only protections are "a team exists" and "do not touch the owner". A plain
+member can therefore promote themselves to admin, demote other admins, remove any
+other member, and add arbitrary people to the team.
+
+`$team` is also a public Livewire property with no `#[Locked]`, so - as in
+finding 1 - the bound model id can be swapped in the request payload. Combined
+with `User::currentTeam()`, which does `Team::find($this->current_team_id)`
+without verifying membership, the team a user acts on is not reliably one they
+belong to.
+
+Separately, `inviteMember()` is an *invitation* in name only: it attaches the
+target user immediately. There is no acceptance step and no notification.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Privilege escalation inside a team: any member becomes an admin at will, so the
+  role column provides no security value.
+* Disruption: a member can eject the rest of the team, including admins.
+* Unsolicited membership: any user can be attached to a stranger's team without
+  knowing. Since `QrCode.team_id` is stamped from `current_team_id` at creation
+  time, this is a foothold for future data-sharing features and is already
+  confusing from a data-ownership standpoint.
+* Today the impact is limited because team membership does not yet grant access
+  to other members' QR codes (QrCodeIndex scopes strictly to `user_id`). That
+  makes this the right moment to fix it - the moment team-scoped reads are added,
+  these same gaps become a cross-tenant data breach.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Add a TeamPolicy [app/Policies/TeamPolicy.php]
+
+        class TeamPolicy
+        {
+            public function view(User $user, Team $team): bool
+            {
+                return $team->users()->whereKey($user->id)->exists();
+            }
+
+            public function manageMembers(User $user, Team $team): bool
+            {
+                if ($team->owner_id === $user->id) {
+                    return true;
+                }
+
+                return $team->users()
+                    ->whereKey($user->id)
+                    ->wherePivot('role', 'admin')
+                    ->exists();
+            }
+
+            public function updateRoles(User $user, Team $team): bool
+            {
+                return $team->owner_id === $user->id;   // owner only
+            }
+        }
+
+    Register it in AppServiceProvider::boot() next to the existing QrCodePolicy.
+
+(2) Enforce it, and lock the bound model [app/Livewire/Teams/TeamManager.php]
+
+        use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+        use Livewire\Attributes\Locked;
+
+        class TeamManager extends Component
+        {
+            use AuthorizesRequests;
+
+            #[Locked]
+            public ?Team $team = null;
+
+            public function mount()
+            {
+                abort_unless(auth()->user()->hasFeature(Feature::Teams), 403);
+
+                $this->team = auth()->user()->currentTeam();
+
+                if ($this->team) {
+                    $this->authorize('view', $this->team);
+                    $this->teamName = $this->team->name;
+                }
+            }
+
+            public function inviteMember()
+            {
+                $this->authorize('manageMembers', $this->team);
+                ...
+            }
+
+            public function updateRole(int $userId, string $role)
+            {
+                $this->authorize('updateRoles', $this->team);
+                ...
+            }
+
+            public function removeMember(int $userId)
+            {
+                $this->authorize('manageMembers', $this->team);
+                ...
+            }
+        }
+
+(3) Make currentTeam() membership-aware [app/Models/User.php]
+
+        public function currentTeam(): ?Team
+        {
+            if ($this->current_team_id) {
+                $team = $this->teams()->whereKey($this->current_team_id)->first();
+
+                if ($team) {
+                    return $team;
+                }
+            }
+
+            return $this->ownedTeams()->first() ?? $this->teams()->first();
+        }
+
+    A stale or tampered `current_team_id` then resolves to nothing rather than to
+    someone else's team.
+
+(4) Turn invitations into real invitations: create a `team_invitations` row with a
+    signed, expiring acceptance link e-mailed to the invitee, and only attach the
+    user when they accept. Also remove `current_team_id` from `User::$fillable`
+    (it is set by trusted code paths only) so it cannot be mass-assigned.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_a_member_cannot_manage_the_team(): void
+    {
+        $team->users()->attach($member->id, ['role' => 'member']);
+        $member->update(['current_team_id' => $team->id]);
+
+        Livewire::actingAs($member)->test(TeamManager::class)
+            ->call('updateRole', $other->id, 'admin')
+            ->assertForbidden();
+
+        Livewire::actingAs($member)->test(TeamManager::class)
+            ->call('removeMember', $other->id)
+            ->assertForbidden();
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+OWASP A01:2021 Broken Access Control
+CWE-862 Missing Authorization
+CWE-269 Improper Privilege Management
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Added TeamPolicy (view / manageMembers / updateRoles) registered in
+AppServiceProvider. TeamManager authorizes every mutating action, $team is
+#[Locked], and User::currentTeam() now resolves through the membership relation so
+a stale or tampered current_team_id cannot select someone else's team.
+current_team_id was removed from User::$fillable and is written with forceFill by
+the two trusted call sites.
+
+NOT DONE: a real invitation-acceptance flow, which is a product change rather
+than a fix. inviteMember() still attaches directly, but only an owner or admin
+can call it now.
+
+Files: app/Policies/TeamPolicy.php, app/Livewire/Teams/TeamManager.php
+       app/Models/User.php, app/Providers/AppServiceProvider.php
+Tests: tests/Feature/Security/AccessControlTest.php (2 cases)
+
+Full suite after the change: 130 passed (367 assertions).

@@ -1,0 +1,189 @@
+================================================================================
+2 - CRITICAL - Paid actions are applied without verifying payment
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Business logic flaw / insufficient verification - OWASP A04:2021
+Verified      : Yes - reproduced against the test suite (see "Evidence")
+Affected files: app/Http/Controllers/PaidActionController.php:11-22
+                app/Services/PaidActionService.php:89-128, 130-189
+                routes/web.php:83-84
+                .env.prod  (STRIPE_PAID_ACTION_PRICE_ID is empty)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+The "success" URL for a paid action is a plain, guessable GET route that the
+user's own browser requests. The controller applies the paid change purely on
+the strength of that request - it never asks Stripe whether the checkout session
+was actually paid:
+
+    public function success(Request $request, PaidAction $paidAction, PaidActionService $paidActionService)
+    {
+        abort_unless($paidAction->user_id === auth()->id(), 403);
+
+        if ($paidAction->isCompleted()) { ... }
+
+        $paidActionService->applyAction($paidAction);   // <-- no payment check
+        ...
+    }
+
+`createCheckout()` appends `?session_id={CHECKOUT_SESSION_ID}` to that URL, so
+the intent to verify was clearly there, but nothing reads the parameter and
+nothing calls Stripe to confirm `payment_status === 'paid'`.
+
+Attack: start any paid edit (which creates the PaidAction row with
+`status = pending` and the full `pending_data` payload), abandon or cancel the
+Stripe checkout, then simply visit /paid-actions/{id}/success. The change is
+applied and the row is stamped `status = completed, paid_at = now()` - the
+records will show a paid action that was never paid for.
+
+SECOND, INDEPENDENT PROBLEM IN THE SAME FLOW
+`PaidActionService::createCheckout()` only goes to Stripe when a price id is
+configured and does not start with "dev_":
+
+    if ($priceId && ! str_starts_with($priceId, 'dev_')) {   // Stripe path
+        ...
+    }
+
+    $this->applyAction($paidAction);                          // free path
+    $paidAction->update(['status' => 'completed', 'paid_at' => now()]);
+
+In deploy/.env.prod, `STRIPE_PAID_ACTION_PRICE_ID=` is **empty**. That means on
+the current production configuration every paid action already takes the free
+branch - nobody is being charged at all, and the database records those actions
+as paid. This is both a revenue bug and a data-integrity bug.
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+Pending, unpaid PaidAction; user simply GETs the success URL:
+
+    [POC3] HTTP 302; paid_action status=completed; paid_at=2026-09-20 14:54:14
+    [POC3] destination_url now: https://attacker-controlled.example.com
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Every per-action charge (edit dynamic QR, change password, set expiry, update
+  scan limit, reactivate) can be taken for free by any user, indefinitely.
+* `paid_at` and `status` are falsified, so revenue reporting, support and any
+  future reconciliation against Stripe are wrong.
+* Because `applyAction()` writes `pending_data` verbatim, a stale pending row can
+  be replayed later to re-apply an old payload.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Verify the Stripe session before applying anything
+    [app/Http/Controllers/PaidActionController.php]
+
+        public function success(Request $request, PaidAction $paidAction, PaidActionService $paidActionService)
+        {
+            abort_unless($paidAction->user_id === auth()->id(), 403);
+
+            if ($paidAction->isCompleted()) {
+                return redirect()->route('qr-codes.index')->with('status', __('qr.updated'));
+            }
+
+            if (! $paidActionService->confirmPayment($paidAction, $request->query('session_id'))) {
+                return redirect()->route('qr-codes.index')->with('error', __('qr.paid_action_not_paid'));
+            }
+
+            $paidActionService->applyAction($paidAction);
+
+            return redirect()->route('qr-codes.index')->with('status', __('qr.updated'));
+        }
+
+(2) Add the confirmation to the service [app/Services/PaidActionService.php]
+
+        public function confirmPayment(PaidAction $paidAction, ?string $sessionId): bool
+        {
+            // Locally-applied (dev) actions never reach this path.
+            if (! $paidAction->stripe_checkout_session_id) {
+                return false;
+            }
+
+            // The session id must match the one we created - not one supplied by the browser.
+            if ($sessionId !== $paidAction->stripe_checkout_session_id) {
+                return false;
+            }
+
+            try {
+                $session = $paidAction->user->stripe()->checkout->sessions->retrieve($sessionId);
+            } catch (\Throwable $e) {
+                report($e);
+
+                return false;
+            }
+
+            return $session->payment_status === 'paid';
+        }
+
+    Note the two-part check: the id must be the one we stored (so it cannot be
+    swapped for another customer's session), and Stripe must confirm it is paid.
+
+(3) Make the free fallback impossible outside local development
+    [app/Services/PaidActionService.php::createCheckout()]
+
+        $priceId = config('qrcode.paid_action_stripe_price_id');
+        $useStripe = $priceId && ! str_starts_with($priceId, 'dev_');
+
+        if (! $useStripe && app()->isProduction()) {
+            throw new \RuntimeException(__('qr.paid_action_unavailable'));
+        }
+
+    Fail closed: if billing is not configured in production, refuse the action
+    rather than granting it for free.
+
+(4) Fix the production configuration
+    Set STRIPE_PAID_ACTION_PRICE_ID in .env.prod to the real Stripe price id.
+    Consider adding a startup/health assertion so a missing billing price id is
+    surfaced loudly instead of silently disabling charging.
+
+(5) Preferred long term: treat the Stripe webhook as the source of truth.
+    Apply the action from `checkout.session.completed` (keyed by the
+    `paid_action_id` already present in the checkout metadata), and let the
+    success URL only display a status. That removes the browser from the trust
+    path entirely. See finding 6 - the webhook must be signature-verified first.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_success_url_does_not_apply_an_unpaid_action(): void
+    {
+        $paidAction = PaidAction::factory()->pending()->create(['user_id' => $user->id]);
+
+        $this->actingAs($user)
+            ->get(route('paid-actions.success', $paidAction))
+            ->assertRedirect();
+
+        $this->assertSame('pending', $paidAction->fresh()->status);
+        $this->assertNull($paidAction->fresh()->paid_at);
+        // and the short link destination is unchanged
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-345 Insufficient Verification of Data Authenticity
+CWE-840 Business Logic Errors
+Stripe: https://docs.stripe.com/payments/checkout/fulfill-orders
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+PaidActionController::success() now calls PaidActionService::confirmPayment(),
+which requires the session id to match the one stored when the checkout was
+created AND Stripe to report payment_status === 'paid'. createCheckout() fails
+closed outside local/testing when no Stripe price id is configured, instead of
+applying the action for free.
+
+NOTE: STRIPE_PAID_ACTION_PRICE_ID is still empty in .env.prod. Paid actions are
+now refused there rather than given away, but the feature stays disabled until a
+real price id is set.
+
+Files: app/Http/Controllers/PaidActionController.php
+       app/Services/PaidActionService.php
+Tests: tests/Feature/Security/BillingIntegrityTest.php (3 cases)
+
+Full suite after the change: 130 passed (367 assertions).

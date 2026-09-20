@@ -51,7 +51,11 @@ return [
     |
     */
 
-    'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', env('APP_ENV') === 'local'),
+    // Password-free login for the seeded demo accounts. Bound to the environment
+    // as well as the flag, so setting the variable in a deployed environment
+    // cannot enable it.
+    'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', false)
+        && in_array(env('APP_ENV'), ['local', 'testing'], true),
 
     /*
     |--------------------------------------------------------------------------
@@ -134,6 +138,11 @@ return [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
+
+    // Content-Security-Policy is sent report-only until the inline scripts and
+    // Alpine expressions in the layouts have been removed; flip this to true to
+    // enforce it.
+    'csp_enforce' => (bool) env('CSP_ENFORCE', false),
 
     'proxy_domain' => env('PROXY_DOMAIN', 'go.localhost'),
     'proxy_scheme' => env('PROXY_SCHEME', 'https'),

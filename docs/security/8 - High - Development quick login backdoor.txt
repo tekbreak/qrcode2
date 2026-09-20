@@ -1,0 +1,141 @@
+================================================================================
+8 - HIGH - Development quick-login backdoor is enabled by the shipped .env template
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Authentication bypass / insecure default - OWASP A07:2021
+Verified      : Code path traced end to end
+Affected files: app/Livewire/Auth/Login.php:36-52 (quickLogin)
+                config/app.php:54 (dev_quick_login default)
+                .env.example:5  (APP_DEV_QUICK_LOGIN=true)
+                resources/views/livewire/auth/login.blade.php (renders the buttons)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+The login component exposes a password-free login action:
+
+    public function quickLogin(string $email)
+    {
+        if (! config('app.dev_quick_login')) {
+            abort(403);
+        }
+
+        if (! in_array($email, MockUserSeeder::emails(), true)) {
+            abort(404);
+        }
+
+        $user = User::where('email', $email)->firstOrFail();
+
+        Auth::login($user, remember: true);   // <-- no credentials required
+        session()->regenerate();
+
+        return redirect()->intended(route('dashboard'));
+    }
+
+The guard is a single config flag, and the flag's default is permissive in two
+ways that compound:
+
+    config/app.php:
+        'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', env('APP_ENV') === 'local'),
+
+    .env.example:
+        APP_DEV_QUICK_LOGIN=true
+        APP_DEBUG=true
+
+`composer setup` runs `file_exists('.env') || copy('.env.example', '.env')`. Any
+environment brought up with that script - a staging box, a demo instance, a new
+developer's internet-reachable container, or a production host where the .env was
+not hand-written - starts with the backdoor **on**, regardless of APP_ENV.
+
+The target accounts are the ones from MockUserSeeder, and the first of them is
+`admin@example.com` with `is_admin = true` (see finding 9).
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Unauthenticated administrator access in one click, on any deployment where the
+  flag is true and the mock users exist. The admin dashboard can promote other
+  users to admin and delete accounts, so this is a full takeover of the instance.
+* The login page renders the quick-login buttons whenever the flag is set, so the
+  backdoor is discoverable simply by visiting /login - no guessing required.
+* The flag is a single boolean with no secondary check on environment, request
+  origin or IP, so one stray environment variable is the entire defence.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Bind the feature to the environment, not only to a flag
+    [config/app.php]
+
+        'dev_quick_login' => (bool) env('APP_DEV_QUICK_LOGIN', false)
+            && in_array(env('APP_ENV'), ['local', 'testing'], true),
+
+    Now the flag can only ever enable the feature in local/testing; setting it in
+    a production .env does nothing.
+
+(2) Re-assert at the call site [app/Livewire/Auth/Login.php]
+
+        public function quickLogin(string $email)
+        {
+            abort_unless(app()->environment('local', 'testing'), 404);
+            abort_unless(config('app.dev_quick_login'), 404);
+            ...
+        }
+
+    Use 404 rather than 403 so the endpoint's existence is not advertised.
+
+(3) Do not ship a permissive template
+    [.env.example]
+
+        APP_DEBUG=false
+        # Local development only. Enables password-free login for seeded demo
+        # accounts. Never set this in a deployed environment.
+        APP_DEV_QUICK_LOGIN=false
+
+    Templates get copied into real environments; the safe value belongs in the
+    template and the convenient value in the developer's own .env.
+
+(4) Guard the view as well
+    [app/Livewire/Auth/Login.php::render()] already gates `$mockAccounts` on the
+    same flag - keep that, and make sure the blade renders nothing at all when the
+    array is empty, so no markup hints at the feature.
+
+(5) Add a deployment check. A simple `php artisan about` review or a CI assertion
+    that `config('app.dev_quick_login') === false` for production builds catches a
+    regression before it ships.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_quick_login_is_unavailable_outside_local(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+        config(['app.dev_quick_login' => true]);   // even if the flag is set
+
+        Livewire::test(Login::class)
+            ->call('quickLogin', 'admin@example.com')
+            ->assertStatus(404);
+
+        $this->assertGuest();
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-489 Active Debug Code
+CWE-1188 Insecure Default Initialization of Resource
+OWASP A07:2021 Identification and Authentication Failures
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+config('app.dev_quick_login') is now ANDed with APP_ENV being local or testing,
+so setting the variable in a deployed environment has no effect. quickLogin()
+re-asserts the environment and returns 404 (not 403) so the endpoint does not
+advertise itself. .env.example now ships APP_DEBUG=false and
+APP_DEV_QUICK_LOGIN=false with a comment explaining the constraint.
+
+Files: config/app.php, app/Livewire/Auth/Login.php, .env.example
+Tests: tests/Feature/Security/AuthHardeningTest.php
+
+Full suite after the change: 130 passed (367 assertions).

@@ -12,6 +12,7 @@ use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\Login;
 use App\Livewire\Auth\Register;
 use App\Livewire\Auth\ResetPassword;
+use App\Livewire\Auth\VerifyEmail;
 use App\Livewire\Billing\BillingIndex;
 use App\Livewire\Dashboard;
 use App\Livewire\QrCodes\BulkGenerator;
@@ -28,7 +29,9 @@ Route::get('/', function () {
     return view('landing.index');
 })->name('landing');
 
-Route::post('/language/switch', [LanguageController::class, 'switch'])->name('language.switch');
+Route::post('/language/switch', [LanguageController::class, 'switch'])
+    ->middleware('throttle:30,1')
+    ->name('language.switch');
 
 // Guest auth routes
 Route::middleware('guest')->group(function () {
@@ -40,12 +43,18 @@ Route::middleware('guest')->group(function () {
     Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('auth.google.redirect');
     Route::get('/auth/google/callback', [GoogleController::class, 'callback'])->name('auth.google.callback');
 
-    Route::post('/auth/magic-link', [MagicLinkController::class, 'send'])->name('auth.magic-link.send');
-    Route::get('/auth/magic-link/{user}', [MagicLinkController::class, 'verify'])->name('auth.magic-link.verify');
+    Route::post('/auth/magic-link', [MagicLinkController::class, 'send'])
+        ->middleware('throttle:5,10')
+        ->name('auth.magic-link.send');
+    Route::get('/auth/magic-link/{user}', [MagicLinkController::class, 'verify'])
+        ->middleware('throttle:10,1')
+        ->name('auth.magic-link.verify');
 });
 
 Route::get('/choose-plan', ChoosePlan::class)->name('auth.choose-plan');
-Route::post('/choose-plan', [ChoosePlanController::class, 'store'])->name('auth.choose-plan.store');
+Route::post('/choose-plan', [ChoosePlanController::class, 'store'])
+    ->middleware('throttle:10,1')
+    ->name('auth.choose-plan.store');
 
 // Authenticated routes (plan selection not required)
 Route::middleware('auth')->group(function () {
@@ -56,6 +65,8 @@ Route::middleware('auth')->group(function () {
         return redirect('/');
     })->name('logout');
 
+    Route::get('/email/verify', VerifyEmail::class)->name('verification.notice');
+
     Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
         $request->fulfill();
 
@@ -63,26 +74,30 @@ Route::middleware('auth')->group(function () {
     })->middleware(['signed', 'throttle:6,1'])->name('verification.verify');
 });
 
-// Authenticated routes (plan must be selected)
+// Authenticated routes (plan must be selected). Publishing surfaces also
+// require a verified email address; billing and settings deliberately do not,
+// so an unverified user can still correct their address or manage a plan.
 Route::middleware(['auth', 'plan.selected'])->group(function () {
-    Route::get('/dashboard', Dashboard::class)->name('dashboard');
+    Route::middleware('verified')->group(function () {
+        Route::get('/dashboard', Dashboard::class)->name('dashboard');
 
-    Route::get('/qr-codes', QrCodeIndex::class)->name('qr-codes.index');
-    Route::get('/qr-codes/categories', CategoryIndex::class)->name('categories.index');
-    Route::get('/qr-codes/create', QrCodeBuilder::class)->name('qr-codes.create');
-    Route::get('/qr-codes/{qrCode}/edit', QrCodeBuilder::class)->name('qr-codes.edit');
-    Route::get('/qr-codes/bulk', BulkGenerator::class)->name('qr-codes.bulk');
+        Route::get('/qr-codes', QrCodeIndex::class)->name('qr-codes.index');
+        Route::get('/qr-codes/categories', CategoryIndex::class)->name('categories.index');
+        Route::get('/qr-codes/create', QrCodeBuilder::class)->name('qr-codes.create');
+        Route::get('/qr-codes/{qrCode}/edit', QrCodeBuilder::class)->name('qr-codes.edit');
+        Route::get('/qr-codes/bulk', BulkGenerator::class)->name('qr-codes.bulk');
 
-    Route::get('/analytics', AnalyticsIndex::class)->name('analytics.index');
-    Route::get('/analytics/{qrCode}', AnalyticsIndex::class)->name('analytics.show');
+        Route::get('/analytics', AnalyticsIndex::class)->name('analytics.index');
+        Route::get('/analytics/{qrCode}', AnalyticsIndex::class)->name('analytics.show');
+
+        Route::get('/teams', TeamManager::class)->name('teams.index');
+    });
 
     Route::get('/billing', BillingIndex::class)->name('billing.index');
     Route::get('/paid-actions/{paidAction}/success', [PaidActionController::class, 'success'])->name('paid-actions.success');
     Route::get('/paid-actions/{paidAction}/cancel', [PaidActionController::class, 'cancel'])->name('paid-actions.cancel');
 
     Route::get('/settings', SettingsIndex::class)->name('settings.index');
-
-    Route::get('/teams', TeamManager::class)->name('teams.index');
 
     // Admin routes
     Route::middleware('admin')->prefix('admin')->group(function () {

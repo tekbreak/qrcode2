@@ -1,0 +1,211 @@
+================================================================================
+4 - HIGH - Stored XSS and unvalidated redirect targets in short-link destinations
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Stored XSS + unvalidated redirect - OWASP A03:2021 / A01:2021
+Verified      : Yes - reproduced against the test suite (see "Evidence")
+Affected files: resources/views/redirect/social-hub.blade.php:28
+                app/Livewire/QrCodes/QrCodeBuilder.php:387-397 (getSocialValidationRules)
+                app/Livewire/QrCodes/QrCodeBuilder.php:253-266 (addSocialNetwork)
+                app/Http/Controllers/RedirectController.php:90 (redirect()->away)
+                app/Http/Controllers/Api/QrCodeApiController.php:79, 114-130
+                app/Livewire/QrCodes/BulkGenerator.php:50-67
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+Nothing in the application constrains a link destination to http/https, and the
+social-hub landing page renders those destinations straight into an href:
+
+    <a href="{{ $network['url'] }}" ... rel="noopener noreferrer">
+
+Blade escapes HTML entities, which stops tag injection - but `javascript:` is not
+an HTML-escaping problem. `href="javascript:alert(document.domain)"` survives
+`e()` untouched and executes on click.
+
+The validation that exists is easy to step around. `addSocialNetwork()` validates
+`addingIdentifier` with `url:http,https`, but the array that is actually saved is
+the public Livewire property `socialNetworks`, and the rule applied to it at save
+time is only:
+
+    $rules = ['socialNetworks' => 'required|array|min:1'];
+
+No rule descends into the elements. Because `socialNetworks` is a public property
+with no `#[Locked]`, a client can set it directly in the Livewire update payload,
+or via the base64 `?s=` state parameter which `hydrateFromState()` copies in
+verbatim:
+
+    $this->socialNetworks = $payload['socialNetworks'] ?? [];
+
+Two more entry points bypass even the intended rule: the API
+(`content_data` is `required|array` with no inner validation, and `update()` uses
+`$request->only(['name','content_data'])` with none at all) and the bulk CSV
+generator (column 1 becomes `content_data.url` unvalidated).
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+    [POC2] stored networks: [{"platform":"custom","identifier":"a",
+                              "url":"javascript:alert(document.domain)"}, ...]
+    [POC2] hub page renders javascript: href => YES
+
+The rendered page contains href="javascript:alert(document.domain)" on the
+public proxy domain.
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Stored XSS on the short-link/proxy domain (go.dynqr.com), delivered to whoever
+  scans the QR code - i.e. to the victim's customers, not to the attacker's own
+  account. One malicious account can serve script to every scanner it can reach.
+* The payload is delivered through a physical QR code, a channel where the target
+  cannot inspect the URL before scanning. It runs on the platform's own domain
+  and TLS certificate, which is exactly the trust the product sells.
+* Unvalidated redirect: even for plain `redirect` links, the platform will send
+  users to any scheme or host. That turns every short link into a phishing
+  laundering service riding a legitimate domain's reputation.
+* `data:` and `intent:` URIs, and app-scheme deep links, are equally unfiltered.
+
+Note: `redirect()->away('javascript:...')` in a Location header is ignored by
+modern browsers, so the primary XSS sink is the social-hub page, not the 302.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) One central place that decides what a destination may be. Create
+    app/Rules/SafeDestinationUrl.php:
+
+        namespace App\Rules;
+
+        use Closure;
+        use Illuminate\Contracts\Validation\ValidationRule;
+
+        class SafeDestinationUrl implements ValidationRule
+        {
+            public function validate(string $attribute, mixed $value, Closure $fail): void
+            {
+                if (! is_string($value) || $value === '') {
+                    $fail(__('qr.invalid_destination'));
+
+                    return;
+                }
+
+                $scheme = strtolower((string) parse_url($value, PHP_URL_SCHEME));
+                $host   = (string) parse_url($value, PHP_URL_HOST);
+
+                if (! in_array($scheme, ['http', 'https'], true) || $host === '') {
+                    $fail(__('qr.invalid_destination'));
+
+                    return;
+                }
+
+                if (filter_var($value, FILTER_VALIDATE_URL) === false) {
+                    $fail(__('qr.invalid_destination'));
+                }
+            }
+        }
+
+    Parse the scheme rather than pattern-matching the string: "jAvAsCrIpT:",
+    leading whitespace and control characters all normalise correctly this way.
+
+(2) Apply it to every element that becomes a destination
+    [app/Livewire/QrCodes/QrCodeBuilder.php::getSocialValidationRules()]
+
+        $rules = [
+            'socialNetworks'            => 'required|array|min:1|max:20',
+            'socialNetworks.*.platform' => ['required', 'string', Rule::in(array_keys(static::socialPlatforms()))],
+            'socialNetworks.*.identifier' => 'required|string|max:300',
+            'socialNetworks.*.url'      => ['required', 'string', 'max:2048', new SafeDestinationUrl],
+        ];
+
+(3) Rebuild the URL server-side instead of trusting the client's copy
+    [same file, getSocialNetworksForSave()] - belt and braces:
+
+        return collect($networks)
+            ->map(fn (array $n) => [
+                'platform'   => $n['platform'],
+                'identifier' => $n['identifier'],
+                'url'        => static::assembleSocialUrlFor($n['platform'], $n['identifier']),
+            ])
+            ->all();
+
+    For every platform except `custom`, the URL is derived from a template, so
+    the client's `url` field never needs to be trusted at all.
+
+(4) Close the API and bulk entry points
+    - QrCodeApiController::store/update: validate `content_data.url`,
+      `content_data.file_url` and every `content_data.networks.*.url` with
+      SafeDestinationUrl; validate on update as well as on store.
+    - BulkGenerator::generate(): validate each parsed row and drop or report the
+      invalid ones before dispatching the job.
+
+(5) Defend the render site too. Add a small helper alongside the rule -
+    App\Support\Url::safeOrNull($url) returns the URL when its scheme is http or
+    https and null otherwise - and use it in
+    resources/views/redirect/social-hub.blade.php:
+
+        @php $href = \App\Support\Url::safeOrNull($network['url']); @endphp
+        @if ($href)
+            <a href="{{ $href }}" rel="noopener noreferrer nofollow" ...>
+        @endif
+
+    Existing rows in the database are already poisoned by the current rules, so
+    filtering at render time is what protects users before a data migration runs.
+
+(6) Enforce the scheme at redirect time [RedirectController::handle()]
+
+        $destination = $linkData['destination_url'];
+
+        if (! in_array(strtolower((string) parse_url($destination, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+            abort(410);
+        }
+
+        return redirect()->away($destination, 302);
+
+(7) Clean up existing data: scan short_links.destination_url and
+    qr_codes.content_data for non-http(s) schemes, and deactivate or null them.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_javascript_urls_are_rejected_everywhere(): void
+    {
+        Livewire::actingAs($user)->test(QrCodeBuilder::class)
+            ->set('type', 'social')->set('name', 'hub')->set('isDynamic', true)
+            ->set('socialNetworks', [['platform' => 'custom', 'identifier' => 'a',
+                                      'url' => 'javascript:alert(1)']])
+            ->call('save')
+            ->assertHasErrors('socialNetworks.0.url');
+    }
+
+Also assert the hub page never emits an href whose scheme is not http/https,
+and repeat for the API store/update endpoints and the bulk CSV path.
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-79 Cross-site Scripting
+CWE-601 URL Redirection to Untrusted Site (Open Redirect)
+OWASP Unvalidated Redirects and Forwards Cheat Sheet
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+Added App\Support\Url (scheme allowlist, control-character and case handling)
+and App\Rules\SafeDestinationUrl. Applied to: builder url / socialUrl / custom
+identifier and every socialNetworks.*.url element; the API store and update form
+requests; and the bulk CSV rows, both at parse time and again at dispatch.
+getSocialNetworksForSave() now re-derives each URL from the platform template
+rather than storing the client's copy. The social-hub view filters every href
+through Url::safeOrNull() and skips unsafe rows, which protects against rows
+stored before this fix; RedirectController aborts 410 on a non-http(s)
+destination. Both short-link responses now send Referrer-Policy: no-referrer.
+
+Files: app/Support/Url.php, app/Rules/SafeDestinationUrl.php
+       app/Livewire/QrCodes/QrCodeBuilder.php, app/Livewire/QrCodes/BulkGenerator.php
+       app/Http/Controllers/RedirectController.php
+       app/Http/Requests/Api/StoreQrCodeRequest.php
+       resources/views/redirect/social-hub.blade.php
+Tests: tests/Feature/Security/UploadAndUrlTest.php (8 scheme cases + 4 integration)
+
+Full suite after the change: 130 passed (367 assertions).

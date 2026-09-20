@@ -51,10 +51,13 @@ class ShortLink extends Model
 
     public static function generateSlug(): string
     {
-        $length = config('qrcode.slug_length', 7);
+        // Str::random() draws on random_bytes() and uses the full [A-Za-z0-9]
+        // alphabet: at 10 characters that is ~59 bits, versus the ~28 bits that
+        // 7 hex characters gave, which was small enough to enumerate.
+        $length = max(8, (int) config('qrcode.slug_length', 10));
 
         do {
-            $slug = substr(hash('sha256', (string) Str::uuid()), 0, $length);
+            $slug = Str::random($length);
         } while (static::where('slug', $slug)->exists());
 
         return $slug;

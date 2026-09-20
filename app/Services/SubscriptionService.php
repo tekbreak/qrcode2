@@ -49,6 +49,7 @@ class SubscriptionService
                 return 'swapped';
             }
 
+            $this->guardDevBilling();
             $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
 
             $this->clearDeletionScheduleIfActive($user);
@@ -69,6 +70,7 @@ class SubscriptionService
             ])->redirect();
         }
 
+        $this->guardDevBilling();
         $this->applyDevSubscription($user, $plan, $yearly, $withTrial);
 
         $this->clearDeletionScheduleIfActive($user);
@@ -117,6 +119,20 @@ class SubscriptionService
         }
 
         return true;
+    }
+
+    /**
+     * Subscriptions may only be granted without a real payment in local
+     * development and in the test suite. Anywhere else this is a misconfiguration
+     * that would hand out paid plans for free, so fail loudly instead.
+     */
+    protected function guardDevBilling(): void
+    {
+        if (app()->environment('local', 'testing')) {
+            return;
+        }
+
+        throw new \RuntimeException(__('auth.plan_payment_failed'));
     }
 
     protected function applyDevSubscription(User $user, Plan $plan, bool $yearly, bool $withTrial = false): void

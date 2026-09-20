@@ -1,0 +1,205 @@
+================================================================================
+1 - CRITICAL - Cross-tenant QR code takeover in the QR builder
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Broken access control (IDOR) - OWASP A01:2021
+Verified      : Yes - reproduced against the test suite (see "Evidence")
+Affected files: app/Livewire/QrCodes/QrCodeBuilder.php  (mount, save, applySave)
+                routes/web.php:76  (qr-codes.edit)
+                app/Policies/QrCodePolicy.php (policy exists but is never called
+                from the builder)
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+Any authenticated user can open, edit and take ownership of ANY other user's QR
+code - including changing where an already-printed dynamic QR code redirects to.
+
+`QrCodeBuilder::mount()` accepts a route-model-bound `QrCode` and never checks
+that it belongs to the current user:
+
+    public function mount(?QrCode $qrCode = null)
+    {
+        if ($qrCode?->exists) {
+            $this->qrCode = $qrCode;   // <-- no authorize(), no ownership check
+            $this->editing = true;
+        }
+        ...
+    }
+
+`save()` -> `applySave()` then writes the record and overwrites `user_id` with
+the *attacker's* id:
+
+    $qrData = [
+        'user_id' => $user->id,        // <-- current (attacking) user
+        ...
+    ];
+    $this->qrCode->update($qrData);
+
+There is a second, independent path to the same bug: `$qrCode` is a plain public
+Livewire property. Livewire 4 dehydrates models to their primary key and re-reads
+them from the request payload on every round trip, and no `#[Locked]` attribute
+is used anywhere in this codebase (`grep -rn "Locked" app/` returns nothing). So
+even without the route, a crafted POST to /livewire/update can swap the bound
+model id.
+
+The rest of the app does this correctly (`QrCodeIndex` scopes every lookup with
+`auth()->user()->qrCodes()->findOrFail()`), which makes the builder the odd one
+out rather than a deliberate design.
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+Attacker (user 2) against a victim's (user 1) dynamic QR code:
+
+    [POC1] GET /qr-codes/{id}/edit as non-owner => HTTP 200
+    [POC1] owner user_id: victim=1 attacker=2 now=1
+    [POC1] destination_url now: https://evil.example.com      <-- hijacked
+    [POC1] name now: pwned
+
+Same attack against a static QR code (no paid-action detour):
+
+    [POC1b] victim=1 attacker=2 qr.user_id now=2; name=stolen  <-- stolen outright
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Redirect hijacking at scale. Dynamic QR codes are printed on physical media
+  (posters, menus, packaging). An attacker enumerating /qr-codes/{id}/edit over
+  sequential ids can repoint every dynamic code in the platform at a phishing or
+  malware host. Victims cannot recall printed media; this is the worst possible
+  outcome for a dynamic-QR product.
+* Ownership theft: the record moves to the attacker's account, so the legitimate
+  owner loses it from their dashboard entirely.
+* Data disclosure: the edit screen hydrates and displays the victim's content -
+  vCard details, Wi-Fi SSID *and password*, e-mail bodies, crypto addresses.
+* Plan-limit and paid-action bypass: attackers can consume other tenants' paid
+  dynamic-code slots.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+Three changes, all small. Apply all three - defence in depth, because each one
+closes a different entry point.
+
+(1) Authorize in mount() [app/Livewire/QrCodes/QrCodeBuilder.php]
+
+    use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+    use Livewire\Attributes\Locked;
+
+    class QrCodeBuilder extends Component
+    {
+        use AuthorizesRequests, WithFileUploads;
+
+        #[Locked]
+        public ?QrCode $qrCode = null;
+
+        #[Locked]
+        public bool $editing = false;
+
+        public function mount(?QrCode $qrCode = null)
+        {
+            if ($qrCode?->exists) {
+                $this->authorize('update', $qrCode);   // <-- add this
+
+                $this->qrCode = $qrCode;
+                $this->editing = true;
+            }
+            ...
+        }
+
+    `#[Locked]` stops the client from swapping the bound model id (and from
+    flipping `editing`) between Livewire round trips. `authorize()` uses the
+    QrCodePolicy that already exists and is already registered in
+    AppServiceProvider::boot().
+
+(2) Re-check on every write, not just on mount [same file, save()]
+
+        public function save()
+        {
+            if ($this->editing) {
+                $this->authorize('update', $this->qrCode);
+            }
+
+            $this->validateStep();
+            ...
+        }
+
+    mount() runs once; save() runs on a later request. Re-authorizing in save()
+    means a stale or tampered component state cannot be replayed.
+
+(3) Never let the write path re-assign ownership [same file, applySave()]
+
+        $qrData = [
+            'category_id' => $pendingData['category_id'],
+            'name'        => $pendingData['name'],
+            'type'        => $pendingData['type'],
+            'is_dynamic'  => $makeDynamic,
+            'content_data'=> $pendingData['content_data'],
+        ];
+
+        if ($this->editing) {
+            $this->qrCode->update($qrData);            // no user_id / team_id here
+            $qr = $this->qrCode->fresh();
+        } else {
+            $qr = QrCode::create($qrData + [
+                'user_id' => $user->id,
+                'team_id' => $user->current_team_id,
+            ]);
+        }
+
+    Ownership is set once, at creation. An update can never move a record between
+    accounts, so even a future authorization slip cannot cause theft.
+
+(4) Also lock down the other route-model-bound component for consistency
+    [app/Livewire/Analytics/AnalyticsIndex.php]. It is not currently exploitable
+    (render() re-scopes to the user's own codes), but it binds `?QrCode $qrCode`
+    the same way. Add `$this->authorize('view', $qrCode)` in mount() and
+    `#[Locked]` on `$qrCodeId` so it cannot regress.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+Add a regression test (tests/Feature/Livewire/QrCodeBuilderTest.php):
+
+    public function test_a_user_cannot_open_another_users_qr_code(): void
+    {
+        $victim   = User::factory()->create(['plan_selected_at' => now()]);
+        $attacker = User::factory()->create(['plan_selected_at' => now()]);
+        $qr = QrCode::factory()->for($victim)->create();
+
+        $this->actingAs($attacker)
+            ->get("/qr-codes/{$qr->id}/edit")
+            ->assertForbidden();
+
+        Livewire::actingAs($attacker)
+            ->test(QrCodeBuilder::class, ['qrCode' => $qr])
+            ->assertForbidden();
+    }
+
+    public function test_saving_never_transfers_ownership(): void
+    {
+        // attacker saves; assert $qr->fresh()->user_id === $victim->id
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+OWASP A01:2021 Broken Access Control
+CWE-639 Authorization Bypass Through User-Controlled Key
+Livewire security: https://livewire.laravel.com/docs/properties#security-concerns
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+QrCodeBuilder now uses AuthorizesRequests and calls authorize('update') in both
+mount() and save(); $qrCode and $editing carry #[Locked] so the bound model id
+cannot be swapped in the Livewire payload; applySave() no longer writes
+user_id/team_id on update, so ownership is set once at creation and can never
+move. AnalyticsIndex got the same treatment (authorize('view') + #[Locked]).
+
+Files: app/Livewire/QrCodes/QrCodeBuilder.php
+       app/Livewire/Analytics/AnalyticsIndex.php
+Tests: tests/Feature/Security/AccessControlTest.php (5 cases)
+
+Full suite after the change: 130 passed (367 assertions).

@@ -6,6 +6,7 @@ use App\Models\QrDesign;
 use Choowx\RasterizeSvg\Svg;
 use Intervention\Image\ImageManager;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
+use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
 
 trait InteractsWithQrDesign
 {
@@ -76,16 +77,69 @@ trait InteractsWithQrDesign
         }
     }
 
+    /**
+     * Resolve a stored logo reference to a real path, or null.
+     *
+     * logo_path is an opaque key, never a free path. Only three roots are
+     * reachable - the bundled icon set, the uploads directory on the public
+     * disk, and Livewire's temporary upload directory (an in-flight upload being
+     * previewed) - and containment is confirmed with realpath() so symlinks and
+     * traversal cannot escape them.
+     */
     protected function resolveLogoPath(string $logoPath): ?string
     {
-        if (str_starts_with($logoPath, '/')) {
-            return $logoPath;
-        }
-        if (str_starts_with($logoPath, 'icons/')) {
-            return public_path($logoPath);
+        if ($logoPath === '' || str_contains($logoPath, "\0") || str_contains($logoPath, '..')) {
+            return null;
         }
 
-        return storage_path('app/public/' . $logoPath);
+        if (str_starts_with($logoPath, 'icons/')) {
+            $name = pathinfo($logoPath, PATHINFO_FILENAME);
+
+            if (! preg_match('/^[A-Za-z0-9._-]+$/', $name)) {
+                return null;
+            }
+
+            return $this->containedPath(
+                public_path('icons/qr-center-icons/' . $name . '.svg'),
+                public_path('icons/qr-center-icons'),
+            );
+        }
+
+        if (str_starts_with($logoPath, '/')) {
+            // The only absolute path ever accepted: a just-uploaded file being
+            // rendered into the live preview before it has been stored.
+            return $this->containedPath($logoPath, $this->temporaryUploadRoot());
+        }
+
+        return $this->containedPath(
+            storage_path('app/public/' . $logoPath),
+            storage_path('app/public'),
+        );
+    }
+
+    protected function containedPath(string $candidate, ?string $root): ?string
+    {
+        if ($root === null) {
+            return null;
+        }
+
+        $real = realpath($candidate);
+        $rootReal = realpath($root);
+
+        if ($real === false || $rootReal === false) {
+            return null;
+        }
+
+        return str_starts_with($real, $rootReal . DIRECTORY_SEPARATOR) ? $real : null;
+    }
+
+    protected function temporaryUploadRoot(): ?string
+    {
+        if (FileUploadConfiguration::isUsingS3()) {
+            return null;
+        }
+
+        return FileUploadConfiguration::storage()->path(FileUploadConfiguration::directory());
     }
 
     protected function embedLogoGd(\GdImage $gd, string $logoPath, int $qrSize, ?QrDesign $design = null): void

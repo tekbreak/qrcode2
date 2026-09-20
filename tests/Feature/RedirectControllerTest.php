@@ -25,6 +25,13 @@ class RedirectControllerTest extends TestCase
         return $this->get($url);
     }
 
+    private function postUnlock(string $slug, string $password): \Illuminate\Testing\TestResponse
+    {
+        return $this->post('http://'.config('app.proxy_domain').'/'.$slug, [
+            'password' => $password,
+        ]);
+    }
+
     public function test_unknown_slug_returns_404(): void
     {
         $this->getRedirect('missing')
@@ -64,8 +71,46 @@ class RedirectControllerTest extends TestCase
     {
         $link = ShortLink::factory()->passwordProtected('secret')->create(['slug' => 'protected2']);
 
-        $this->getRedirect($link->slug, ['password' => 'wrong'])
-            ->assertStatus(403);
+        $this->postUnlock($link->slug, 'wrong')
+            ->assertStatus(403)
+            ->assertViewIs('redirect.password');
+    }
+
+    public function test_password_protected_link_accepts_the_correct_password(): void
+    {
+        $link = ShortLink::factory()->passwordProtected('secret')->create([
+            'slug' => 'protected3',
+            'destination_url' => 'https://example.com/target',
+        ]);
+
+        $this->postUnlock($link->slug, 'secret')
+            ->assertRedirect(route('redirect.handle', $link->slug));
+
+        $this->getRedirect($link->slug)
+            ->assertRedirect('https://example.com/target');
+    }
+
+    public function test_a_password_in_the_query_string_does_not_unlock_a_link(): void
+    {
+        $link = ShortLink::factory()->passwordProtected('secret')->create(['slug' => 'protected4']);
+
+        $this->getRedirect($link->slug, ['password' => 'secret'])
+            ->assertOk()
+            ->assertViewIs('redirect.password');
+    }
+
+    public function test_unlock_attempts_are_rate_limited(): void
+    {
+        $link = ShortLink::factory()->passwordProtected('secret')->create(['slug' => 'protected5']);
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->postUnlock($link->slug, 'wrong')->assertStatus(403);
+        }
+
+        $this->postUnlock($link->slug, 'wrong')->assertStatus(429);
+
+        // Even the correct password is refused while the lockout holds.
+        $this->postUnlock($link->slug, 'secret')->assertStatus(429);
     }
 
     public function test_successful_redirect_dispatches_scan_job(): void

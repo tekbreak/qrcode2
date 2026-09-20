@@ -13,4 +13,5 @@ return [
     'delete_warning' => 'Una vez elimines tu cuenta, todos los datos se borrarán permanentemente.',
     'delete_account' => 'Eliminar cuenta',
     'confirm_delete' => 'Sí, eliminar mi cuenta',
+    'delete_confirm_password' => 'Introduce tu contraseña para confirmar',
 ];

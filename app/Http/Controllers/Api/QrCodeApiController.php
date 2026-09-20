@@ -3,13 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\Feature;
-use App\Enums\QrCodeType;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StoreQrCodeRequest;
+use App\Http\Requests\Api\UpdateQrCodeRequest;
 use App\Models\QrCode;
 use App\Models\ShortLink;
 use App\Services\QrCodeGeneratorService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class QrCodeApiController extends Controller
 {
@@ -19,10 +20,12 @@ class QrCodeApiController extends Controller
             return response()->json(['error' => 'API access is not available on your plan.'], 403);
         }
 
+        $perPage = min(max((int) $request->input('per_page', 20), 1), 100);
+
         $qrCodes = $request->user()->qrCodes()
             ->with('design', 'shortLink')
             ->latest()
-            ->paginate($request->input('per_page', 20));
+            ->paginate($perPage);
 
         return response()->json($qrCodes);
     }
@@ -38,24 +41,10 @@ class QrCodeApiController extends Controller
         return response()->json($qrCode->load('design', 'shortLink'));
     }
 
-    public function store(Request $request)
+    public function store(StoreQrCodeRequest $request)
     {
         if (! $request->user()->hasFeature(Feature::ApiAccess)) {
             return response()->json(['error' => 'API access is not available on your plan.'], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'type' => 'required|string|in:' . implode(',', array_column(QrCodeType::cases(), 'value')),
-            'is_dynamic' => 'boolean',
-            'content_data' => 'required|array',
-            'design' => 'nullable|array',
-            'design.fg_color' => 'nullable|string|size:7',
-            'design.bg_color' => 'nullable|string|size:7',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
         }
 
         $user = $request->user();
@@ -79,14 +68,14 @@ class QrCodeApiController extends Controller
             'content_data' => $request->input('content_data'),
         ]);
 
-        $designData = $request->input('design', []);
-        $qrCode->design()->create([
-            'fg_color' => $designData['fg_color'] ?? '#000000',
-            'bg_color' => $designData['bg_color'] ?? '#FFFFFF',
-            'dot_style' => $designData['dot_style'] ?? 'square',
-            'eye_style' => $designData['eye_style'] ?? 'square',
-            'eye_frame_style' => $designData['eye_frame_style'] ?? 'square',
-            'eye_ball_style' => $designData['eye_ball_style'] ?? 'square',
+        $designData = $request->designAttributes();
+        $qrCode->design()->create($designData + [
+            'fg_color' => '#000000',
+            'bg_color' => '#FFFFFF',
+            'dot_style' => 'square',
+            'eye_style' => 'square',
+            'eye_frame_style' => 'square',
+            'eye_ball_style' => 'square',
         ]);
 
         if ($isDynamic) {
@@ -103,7 +92,7 @@ class QrCodeApiController extends Controller
         return response()->json($qrCode->load('design', 'shortLink'), 201);
     }
 
-    public function update(Request $request, QrCode $qrCode)
+    public function update(UpdateQrCodeRequest $request, QrCode $qrCode)
     {
         if (! $request->user()->hasFeature(Feature::ApiAccess)) {
             return response()->json(['error' => 'API access is not available on your plan.'], 403);
@@ -111,17 +100,19 @@ class QrCodeApiController extends Controller
 
         $this->authorize('update', $qrCode);
 
-        $qrCode->update($request->only(['name', 'content_data']));
+        $validated = $request->validated();
+
+        $qrCode->update(array_intersect_key($validated, array_flip(['name', 'content_data'])));
 
         if ($request->has('design')) {
             $qrCode->design()->updateOrCreate(
                 ['qr_code_id' => $qrCode->id],
-                $request->input('design')
+                $request->designAttributes()
             );
         }
 
         if ($qrCode->is_dynamic && $qrCode->shortLink) {
-            $contentData = $request->input('content_data', []);
+            $contentData = $validated['content_data'] ?? [];
             $destinationUrl = $contentData['url'] ?? $contentData['file_url'] ?? null;
 
             if ($destinationUrl !== null) {
@@ -153,7 +144,12 @@ class QrCodeApiController extends Controller
 
         $this->authorize('download', $qrCode);
 
-        $format = $request->input('format', 'png');
+        $validated = $request->validate([
+            'format' => ['nullable', Rule::in(['png', 'svg'])],
+            'size' => ['nullable', 'integer', 'min:100', 'max:2000'],
+        ]);
+
+        $format = $validated['format'] ?? 'png';
         $generator = app(QrCodeGeneratorService::class);
 
         if ($format === 'svg') {
@@ -166,7 +162,7 @@ class QrCodeApiController extends Controller
             return response($svg, 200, ['Content-Type' => 'image/svg+xml']);
         }
 
-        $png = $generator->generatePng($qrCode, $request->integer('size', 1000));
+        $png = $generator->generatePng($qrCode, (int) ($validated['size'] ?? 1000));
 
         return response($png, 200, ['Content-Type' => 'image/png']);
     }

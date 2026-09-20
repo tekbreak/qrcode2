@@ -1,0 +1,197 @@
+================================================================================
+5 - HIGH - Attacker-controlled logo_path reads arbitrary files from the server
+================================================================================
+Status        : FIXED (2026-09-20) - see "FIX APPLIED" at the end of this file
+Category      : Path traversal / local file inclusion - OWASP A01:2021
+Verified      : Yes - reproduced against the test suite (see "Evidence")
+Affected files: app/Services/Generators/Concerns/InteractsWithQrDesign.php:79-89
+                                                                    :194-213, 257-326
+                app/Livewire/QrCodes/QrCodeBuilder.php:556-557 (hydrateFromState)
+                app/Http/Controllers/Api/QrCodeApiController.php:116-121
+
+--------------------------------------------------------------------------------
+SUMMARY
+--------------------------------------------------------------------------------
+`resolveLogoPath()` hands back any absolute path it is given, unchanged:
+
+    protected function resolveLogoPath(string $logoPath): ?string
+    {
+        if (str_starts_with($logoPath, '/')) {
+            return $logoPath;                       // <-- anywhere on the filesystem
+        }
+        if (str_starts_with($logoPath, 'icons/')) {
+            return public_path($logoPath);
+        }
+
+        return storage_path('app/public/' . $logoPath);   // <-- no traversal check either
+    }
+
+The relative branch is equally unguarded: `../../../..` in `$logoPath` escapes
+storage/app/public.
+
+`logo_path` is attacker-controlled through two paths that never validate it:
+
+  a) The builder's shareable-state parameter. `hydrateFromState()` base64-decodes
+     `?s=` from the URL and assigns `$this->existingLogo = $payload['existingLogo']`,
+     which `buildPendingData()` writes straight into the design row.
+
+  b) The API. `QrCodeApiController::update()` mass-assigns the whole design array
+     with no validation at all:
+
+         $qrCode->design()->updateOrCreate(['qr_code_id' => $qrCode->id],
+                                           $request->input('design'));
+
+     `logo_path` is in QrDesign::$fillable, so it is accepted as-is.
+
+The resolved path is then fed to the renderer. For an `.svg` extension it goes to
+`loadSvgAsGd()` -> `rasterizeSvgFileToPngBlob()`, which hands the path to Imagick
+(`$manager->read($svgPath)`) or shells out to the ImageMagick CLI. For other
+extensions it goes to `getimagesize()` and `imagecreatefrom*()`, and the decoded
+pixels are composited into the QR image the attacker then downloads.
+
+--------------------------------------------------------------------------------
+EVIDENCE (reproduced locally)
+--------------------------------------------------------------------------------
+Via the API:
+
+    [POC6] HTTP 200; stored logo_path='/etc/passwd'
+
+Via the builder's ?s= state parameter, no API access required:
+
+    [POC7] logo_path persisted from ?s= URL param: '/etc/passwd'
+
+--------------------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------------------
+* Arbitrary image disclosure: any PNG/JPEG/GIF/WEBP readable by the web user -
+  other tenants' uploaded logos and PDFs-turned-images, private assets, backups -
+  is rendered into a QR code the attacker downloads through the normal export
+  endpoints.
+* SVG rasterisation of arbitrary server-side paths. Pointing `logo_path` at any
+  `.svg` on disk (including one the attacker just uploaded through finding 3,
+  which accepts SVG with no validation) makes Imagick or the ImageMagick CLI
+  parse untrusted markup. ImageMagick's SVG delegates have a long history of
+  file-read and SSRF primitives via external entities and `<image href="...">`.
+  Chained with finding 3 this is a plausible path to reading text files and to
+  outbound requests from the application server.
+* Filesystem probing: a path that exists and decodes renders; one that does not
+  silently returns null. That difference is an oracle for mapping the server.
+* Resource exhaustion: pointing at a very large file forces a full decode attempt
+  on every render.
+
+--------------------------------------------------------------------------------
+PROPOSED FIX
+--------------------------------------------------------------------------------
+(1) Treat logo_path as an opaque key, never as a path
+    [app/Services/Generators/Concerns/InteractsWithQrDesign.php]
+
+        protected function resolveLogoPath(string $logoPath): ?string
+        {
+            // Built-in icon set: name must be a plain slug, resolved under public/icons.
+            if (str_starts_with($logoPath, 'icons/')) {
+                $name = basename($logoPath, '.svg');
+
+                if (! preg_match('/^[A-Za-z0-9._-]+$/', $name)) {
+                    return null;
+                }
+
+                $candidate = public_path('icons/qr-center-icons/' . $name . '.svg');
+                $root      = public_path('icons/qr-center-icons');
+            } else {
+                // Uploaded logo: always relative to the public disk, never absolute.
+                if (str_contains($logoPath, '..') || str_starts_with($logoPath, '/')) {
+                    return null;
+                }
+
+                $candidate = storage_path('app/public/' . $logoPath);
+                $root      = storage_path('app/public/logos');
+            }
+
+            $real     = realpath($candidate);
+            $rootReal = realpath($root);
+
+            // realpath() collapses symlinks and traversal, so this comparison is the
+            // actual containment check - the string checks above are just fast rejects.
+            if ($real === false || $rootReal === false || ! str_starts_with($real, $rootReal . DIRECTORY_SEPARATOR)) {
+                return null;
+            }
+
+            return $real;
+        }
+
+(2) Validate logo_path wherever it can be written
+    - QrCodeApiController::store/update: stop mass-assigning `design`. Validate
+      an explicit allowlist of keys and reject `logo_path` from the API entirely
+      (it should only ever be produced by an upload or by icon selection):
+
+          $design = $validator->validated()['design'] ?? [];
+          $qrCode->design()->updateOrCreate(
+              ['qr_code_id' => $qrCode->id],
+              Arr::only($design, ['fg_color','bg_color','gradient','dot_style','eye_style',
+                                  'eye_frame_style','eye_ball_style','frame_style','frame_text',
+                                  'logo_match_fg_color','template_id'])
+          );
+
+    - QrCodeBuilder::hydrateFromState(): the shared-state payload is a URL that
+      one user can send to another, so nothing in it may be trusted. Drop
+      `existingLogo` and `existingFileUrl` from both `stateToPayload()` and
+      `hydrateFromState()` - they describe server-side artefacts and have no
+      business travelling in a shareable link. If they must survive sharing,
+      re-derive them from the database record being edited instead.
+
+(3) Stop rasterising SVG from arbitrary sources
+    Only the curated icon set in public/icons/qr-center-icons should ever reach
+    `loadSvgAsGd()`. Once (1) and (2) are in place that is true by construction.
+    Additionally consider an ImageMagick policy.xml that disables the MSVG/MVG
+    and URL coders:
+
+        <policy domain="coder" rights="none" pattern="MSVG" />
+        <policy domain="coder" rights="none" pattern="MVG" />
+        <policy domain="coder" rights="none" pattern="URL" />
+        <policy domain="coder" rights="none" pattern="HTTPS" />
+
+(4) Data cleanup: null out any qr_designs.logo_path that is absolute or contains
+    "..", or that does not resolve inside the two allowed roots.
+
+--------------------------------------------------------------------------------
+VERIFICATION
+--------------------------------------------------------------------------------
+    public function test_absolute_and_traversing_logo_paths_are_rejected(): void
+    {
+        foreach (['/etc/passwd', '../../../../etc/passwd', 'logos/../../../.env'] as $path) {
+            $this->assertNull($this->resolveLogoPath($path));
+        }
+    }
+
+    public function test_api_cannot_set_logo_path(): void
+    {
+        $this->actingAs($pro, 'sanctum')
+            ->putJson("/api/qr-codes/{$qr->id}", ['design' => ['logo_path' => '/etc/passwd']])
+            ->assertStatus(422);
+    }
+
+--------------------------------------------------------------------------------
+REFERENCES
+--------------------------------------------------------------------------------
+CWE-22 Path Traversal
+CWE-73 External Control of File Name or Path
+ImageMagick security policy: https://imagemagick.org/script/security-policy.php
+
+================================================================================
+FIX APPLIED (2026-09-20)
+================================================================================
+resolveLogoPath() now treats logo_path as an opaque key: only three roots are
+reachable (the bundled icon set, the public-disk uploads directory, and
+Livewire's temporary upload directory for in-flight previews), and containment is
+confirmed with realpath() so symlinks and traversal cannot escape. Absolute paths
+are accepted only inside the temp-upload root. The API can no longer set
+logo_path at all (it is 'prohibited' in the form request), and existingLogo /
+existingFileUrl were removed from the shareable ?s= state payload and marked
+#[Locked].
+
+Files: app/Services/Generators/Concerns/InteractsWithQrDesign.php
+       app/Livewire/QrCodes/QrCodeBuilder.php
+       app/Http/Requests/Api/StoreQrCodeRequest.php
+Tests: tests/Unit/Services/LogoPathContainmentTest.php (5 cases)
+
+Full suite after the change: 130 passed (367 assertions).
