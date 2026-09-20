@@ -7,6 +7,7 @@ use App\Models\Team;
 use App\Policies\QrCodePolicy;
 use App\Policies\TeamPolicy;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Cashier\Cashier;
@@ -56,11 +57,19 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Billing controls in this application fail open when Stripe is not
-     * configured: plans get granted locally and the webhook stops verifying
-     * signatures. Refuse to boot a production environment in that state so a
-     * missing environment variable is a loud deploy failure rather than a quiet
-     * hole.
+     * Report billing misconfiguration without taking the site down.
+     *
+     * Every way a missing Stripe variable could actually cost money is already
+     * closed at the point of use: SubscriptionService::guardDevBilling() refuses
+     * to grant a plan locally outside local/testing, PaidActionService refuses to
+     * start an unpriced paid action, and the webhook route has
+     * VerifyWebhookSignature attached unconditionally so it rejects unsigned
+     * events whether or not a secret is configured.
+     *
+     * That makes a hard failure here pure downside: this application also serves
+     * every customer's QR redirect, so aborting the boot over a billing variable
+     * would take working short links offline. Log it loudly instead, and use
+     * `php artisan billing:check` for a deploy-time gate.
      */
     protected function assertBillingConfigured(): void
     {
@@ -68,27 +77,40 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
 
+        foreach (static::billingConfigProblems() as $problem) {
+            Log::error('Billing configuration: '.$problem);
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function billingConfigProblems(): array
+    {
+        $problems = [];
         $secret = config('cashier.secret');
 
-        if (blank($secret) || ! str_starts_with($secret, 'sk_')) {
-            throw new \RuntimeException(
-                'STRIPE_SECRET is missing or malformed; paid plans would be granted without payment.'
-            );
+        if (blank($secret)) {
+            $problems[] = 'STRIPE_SECRET is not set; checkout and subscription sync are disabled.';
+        } elseif (! str_starts_with($secret, 'sk_')) {
+            $problems[] = 'STRIPE_SECRET does not look like a secret key (expected an "sk_" prefix).';
         }
 
         if (blank(config('cashier.key'))) {
-            throw new \RuntimeException('STRIPE_KEY is not set.');
+            $problems[] = 'STRIPE_KEY is not set.';
         }
 
+        if (blank(config('qrcode.paid_action_stripe_price_id'))) {
+            $problems[] = 'STRIPE_PAID_ACTION_PRICE_ID is not set; paid actions are refused.';
+        }
+
+        // Not a security issue - the webhook rejects unsigned events regardless -
+        // but without it, subscription changes made in the Stripe billing portal
+        // are only picked up by the daily subscriptions:sync run.
         if (blank(config('cashier.webhook.secret'))) {
-            throw new \RuntimeException(
-                'STRIPE_WEBHOOK_SECRET is not set; the Stripe webhook would accept unsigned events.'
-            );
+            $problems[] = 'STRIPE_WEBHOOK_SECRET is not set; billing state relies on the daily subscriptions:sync reconciliation.';
         }
 
-        // STRIPE_PAID_ACTION_PRICE_ID is deliberately not asserted here: a
-        // missing price id disables paid actions (PaidActionService fails closed)
-        // rather than compromising the application, so it must not take the whole
-        // site down.
+        return $problems;
     }
 }

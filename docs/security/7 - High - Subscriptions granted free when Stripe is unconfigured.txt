@@ -142,11 +142,16 @@ FIX APPLIED (2026-09-20)
 ================================================================================
 SubscriptionService::guardDevBilling() throws unless the environment is local or
 testing, and is called on both paths that previously fell through to
-applyDevSubscription(). assertBillingConfigured() makes a malformed or missing
-Stripe secret a boot failure in production rather than a silent downgrade to free
-plans.
+applyDevSubscription(). That point-of-use guard is what closes the finding: a
+missing or malformed Stripe secret can no longer result in a free plan grant.
+
+REVISED 2026-09-20 (after deployment): a malformed/missing Stripe secret was also
+made a fatal boot error in production. Removed for the reasons in finding 6 - it
+was redundant with the guard above and it took the QR redirect surface down with
+it. It is now a logged error plus `php artisan billing:check`.
 
 Files: app/Services/SubscriptionService.php, app/Providers/AppServiceProvider.php
+       app/Console/Commands/CheckBillingConfig.php
 Tests: tests/Feature/Security/BillingIntegrityTest.php
 
 Full suite after the change: 130 passed (367 assertions).

@@ -115,6 +115,27 @@ class BillingIntegrityTest extends TestCase
         }
     }
 
+    public function test_missing_billing_config_is_reported_but_never_aborts_the_boot(): void
+    {
+        // This application also serves every customer's QR redirect, so a billing
+        // variable must never be able to take the site down.
+        config([
+            'cashier.secret' => '',
+            'cashier.key' => '',
+            'cashier.webhook.secret' => '',
+            'qrcode.paid_action_stripe_price_id' => '',
+        ]);
+
+        $problems = \App\Providers\AppServiceProvider::billingConfigProblems();
+
+        $this->assertCount(4, $problems);
+
+        $this->artisan('billing:check')->assertExitCode(1);
+
+        // The landing page and the short-link redirect both still work.
+        $this->get('/')->assertOk();
+    }
+
     public function test_the_stripe_webhook_rejects_unsigned_requests(): void
     {
         config(['cashier.webhook.secret' => null]);   // even with no secret configured

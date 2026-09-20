@@ -122,14 +122,33 @@ FIX APPLIED (2026-09-20)
 Cashier::ignoreRoutes() is called in register(), and the webhook route is
 registered in AppServiceProvider with VerifyWebhookSignature attached
 unconditionally plus throttle:60,1 - verification no longer depends on the secret
-happening to be configured. assertBillingConfigured() additionally refuses to
-boot a production environment when STRIPE_WEBHOOK_SECRET, STRIPE_SECRET or
-STRIPE_KEY is missing or malformed.
+happening to be configured. THIS is what closes the finding: the endpoint rejects
+unsigned events whether or not STRIPE_WEBHOOK_SECRET is set.
 
-Verified: .env.prod satisfies all three, so production still boots.
+REVISED 2026-09-20 (after deployment): the first version of this fix also made a
+missing STRIPE_WEBHOOK_SECRET a fatal boot error in production. That was wrong on
+two counts. It protected nothing - the middleware above already does - and this
+application serves every customer's QR redirect, so aborting the boot over a
+billing variable takes working short links offline. It did exactly that on the
+first deploy. The check is now a logged error plus an opt-in
+`php artisan billing:check` command (exit 1 on problems) for use in a deploy
+script.
+
+WHETHER THIS APPLICATION NEEDS WEBHOOKS AT ALL: not strictly. Subscription state
+is reconciled from Stripe by `subscriptions:sync`, scheduled daily at 03:00
+(SubscriptionSyncService::syncSubscription pulls each live subscription's status
+and price and cancels or deletes local records to match), and paid actions now
+confirm payment synchronously in PaidActionController::success. The gap without
+webhooks is latency, not correctness: BillingIndex::manageBilling() sends
+customers to the Stripe billing portal, so a cancellation, plan switch or failed
+renewal made there is not reflected locally until the next 03:00 run - up to ~24
+hours of stale entitlements in either direction. Configuring the webhook closes
+that window; running subscriptions:sync more often narrows it.
 
 Files: app/Providers/AppServiceProvider.php
+       app/Console/Commands/CheckBillingConfig.php
 Tests: tests/Feature/Security/BillingIntegrityTest.php - the webhook rejects an
-       unsigned POST even with the secret explicitly unset
+       unsigned POST even with the secret explicitly unset, and missing billing
+       config is reported without aborting the boot
 
 Full suite after the change: 130 passed (367 assertions).

@@ -70,6 +70,14 @@ STILL OUTSTANDING - OPERATIONAL, NOT FIXABLE FROM THE CODEBASE
    now refused in production rather than applied for free - the feature is
    disabled until a real price id is set. (finding 2)
 
+2b. STRIPE_WEBHOOK_SECRET is optional for this application and is NOT a security
+   requirement - the webhook rejects unsigned events either way. Without it,
+   subscription changes made in the Stripe billing portal are only picked up by
+   the daily 03:00 subscriptions:sync run, so entitlements can be up to ~24h
+   stale. Set it if you want near-real-time billing state. Run
+   `php artisan billing:check` on each host to see what is missing; it exits 1 on
+   problems and is safe to add to build.sh. (finding 6)
+
 3. Add the web-server rules for /storage: deny execution of .php, and serve
    uploads with Content-Security-Policy "default-src 'none'; sandbox" and
    X-Content-Type-Options: nosniff. The application-side validation is in place,
