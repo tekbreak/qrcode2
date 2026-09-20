@@ -25,7 +25,7 @@ class MagicLinkMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(
-            view: 'emails.magic-link',
+            markdown: 'emails.magic-link',
         );
     }
 }

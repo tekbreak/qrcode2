@@ -1,4 +1,4 @@
-@component('mail::message')
+<x-emails.transactional>
 # {{ __('billing.account_deletion_greeting', ['name' => $user->name]) }}
 
 {{ __('billing.account_deletion_body', ['days' => config('qrcode.account_deletion_grace_days', 7)]) }}
@@ -7,12 +7,9 @@
 
 {{ __('billing.account_deletion_data_warning') }}
 
-@component('mail::button', ['url' => route('billing.index')])
+@component('mail::button', ['url' => route('billing.index'), 'color' => 'primary'])
 {{ __('billing.account_deletion_resubscribe') }}
 @endcomponent
 
 {{ __('billing.account_deletion_resubscribe_note') }}
-
-{{ __('common.thanks') }},<br>
-{{ config('app.name') }}
-@endcomponent
+</x-emails.transactional>

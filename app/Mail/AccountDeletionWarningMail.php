@@ -30,7 +30,7 @@ class AccountDeletionWarningMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(
-            view: 'emails.account-deletion-warning',
+            markdown: 'emails.account-deletion-warning',
         );
     }
 }
