@@ -74,9 +74,13 @@ STILL OUTSTANDING - OPERATIONAL, NOT FIXABLE FROM THE CODEBASE
    requirement - the webhook rejects unsigned events either way. Without it,
    subscription changes made in the Stripe billing portal are only picked up by
    the daily 03:00 subscriptions:sync run, so entitlements can be up to ~24h
-   stale. Set it if you want near-real-time billing state. Run
-   `php artisan billing:check` on each host to see what is missing; it exits 1 on
-   problems and is safe to add to build.sh. (finding 6)
+   stale. Set it if you want near-real-time billing state, or run
+   subscriptions:sync more often than daily.
+
+   There is no boot-time billing check: it would run on every request and every
+   artisan command. Run `php artisan billing:check` on each host to see what is
+   missing - it exits 1 on problems, so it can be a step in build.sh if you want
+   a deploy-time gate. (finding 6)
 
 3. Add the web-server rules for /storage: deny execution of .php, and serve
    uploads with Content-Security-Policy "default-src 'none'; sandbox" and

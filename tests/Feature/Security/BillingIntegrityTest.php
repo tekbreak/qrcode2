@@ -9,6 +9,7 @@ use App\Models\ShortLink;
 use App\Models\User;
 use App\Services\SubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class BillingIntegrityTest extends TestCase
@@ -115,10 +116,12 @@ class BillingIntegrityTest extends TestCase
         }
     }
 
-    public function test_missing_billing_config_is_reported_but_never_aborts_the_boot(): void
+    public function test_missing_billing_config_never_affects_the_running_application(): void
     {
         // This application also serves every customer's QR redirect, so a billing
-        // variable must never be able to take the site down.
+        // variable must never take the site down - and the check must not run on
+        // boot either, because boot() fires on every request and every artisan
+        // command.
         config([
             'cashier.secret' => '',
             'cashier.key' => '',
@@ -130,10 +133,16 @@ class BillingIntegrityTest extends TestCase
 
         $this->assertCount(4, $problems);
 
+        // Reported only when explicitly asked for.
         $this->artisan('billing:check')->assertExitCode(1);
 
-        // The landing page and the short-link redirect both still work.
+        // The application itself is unaffected and logs nothing about it.
+        Log::spy();
+
         $this->get('/')->assertOk();
+
+        Log::shouldNotHaveReceived('error');
+        Log::shouldNotHaveReceived('warning');
     }
 
     public function test_the_stripe_webhook_rejects_unsigned_requests(): void

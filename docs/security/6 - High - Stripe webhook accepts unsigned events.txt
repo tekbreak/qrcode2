@@ -125,14 +125,23 @@ unconditionally plus throttle:60,1 - verification no longer depends on the secre
 happening to be configured. THIS is what closes the finding: the endpoint rejects
 unsigned events whether or not STRIPE_WEBHOOK_SECRET is set.
 
-REVISED 2026-09-20 (after deployment): the first version of this fix also made a
-missing STRIPE_WEBHOOK_SECRET a fatal boot error in production. That was wrong on
-two counts. It protected nothing - the middleware above already does - and this
-application serves every customer's QR redirect, so aborting the boot over a
-billing variable takes working short links offline. It did exactly that on the
-first deploy. The check is now a logged error plus an opt-in
-`php artisan billing:check` command (exit 1 on problems) for use in a deploy
-script.
+REVISED 2026-09-20 (after deployment), twice:
+
+  v1 made a missing STRIPE_WEBHOOK_SECRET a fatal boot error in production. Wrong
+  on two counts: it protected nothing (the middleware above already does), and
+  this application serves every customer's QR redirect, so aborting the boot over
+  a billing variable takes working short links offline. It broke the deploy.
+
+  v2 downgraded it to Log::error() during boot(). Also wrong: boot() runs on
+  every request and every artisan command, so it wrote an error line on each one
+  - noise that would bury real errors and grow the log, at the wrong severity for
+  an optional setting.
+
+  v3 (current): no boot-time check at all. The configuration report lives in
+  `php artisan billing:check` (exit 1 on problems), run when an operator wants
+  it - for example as a step in build.sh. The real controls are the point-of-use
+  guards, which log with context only when someone actually tries to use the
+  feature.
 
 WHETHER THIS APPLICATION NEEDS WEBHOOKS AT ALL: not strictly. Subscription state
 is reconciled from Stripe by `subscriptions:sync`, scheduled daily at 03:00

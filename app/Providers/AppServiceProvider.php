@@ -7,7 +7,6 @@ use App\Models\Team;
 use App\Policies\QrCodePolicy;
 use App\Policies\TeamPolicy;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Cashier\Cashier;
@@ -34,7 +33,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(QrCode::class, QrCodePolicy::class);
         Gate::policy(Team::class, TeamPolicy::class);
 
-        $this->assertBillingConfigured();
         $this->registerCashierRoutes();
     }
 
@@ -57,32 +55,17 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Report billing misconfiguration without taking the site down.
+     * Stripe configuration gaps, for `php artisan billing:check`.
      *
-     * Every way a missing Stripe variable could actually cost money is already
-     * closed at the point of use: SubscriptionService::guardDevBilling() refuses
-     * to grant a plan locally outside local/testing, PaidActionService refuses to
-     * start an unpriced paid action, and the webhook route has
-     * VerifyWebhookSignature attached unconditionally so it rejects unsigned
-     * events whether or not a secret is configured.
+     * Deliberately not called during boot. None of these expose the application:
+     * SubscriptionService::guardDevBilling() refuses to grant a plan locally
+     * outside local/testing, PaidActionService refuses to start an unpriced paid
+     * action, and the webhook route has VerifyWebhookSignature attached
+     * unconditionally so it rejects unsigned events with or without a secret.
+     * They disable billing features, which is an operator question, not a
+     * per-request one - and boot() runs on every request and every artisan
+     * command, so checking here would only produce noise.
      *
-     * That makes a hard failure here pure downside: this application also serves
-     * every customer's QR redirect, so aborting the boot over a billing variable
-     * would take working short links offline. Log it loudly instead, and use
-     * `php artisan billing:check` for a deploy-time gate.
-     */
-    protected function assertBillingConfigured(): void
-    {
-        if (! $this->app->isProduction()) {
-            return;
-        }
-
-        foreach (static::billingConfigProblems() as $problem) {
-            Log::error('Billing configuration: '.$problem);
-        }
-    }
-
-    /**
      * @return array<int, string>
      */
     public static function billingConfigProblems(): array

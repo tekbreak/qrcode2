@@ -146,9 +146,10 @@ applyDevSubscription(). That point-of-use guard is what closes the finding: a
 missing or malformed Stripe secret can no longer result in a free plan grant.
 
 REVISED 2026-09-20 (after deployment): a malformed/missing Stripe secret was also
-made a fatal boot error in production. Removed for the reasons in finding 6 - it
-was redundant with the guard above and it took the QR redirect surface down with
-it. It is now a logged error plus `php artisan billing:check`.
+made a fatal boot error in production, then a per-boot log line. Both removed -
+see the revision history in finding 6. The boot-time check was redundant with the
+guard above, and boot() runs on every request. Configuration reporting now lives
+only in `php artisan billing:check`.
 
 Files: app/Services/SubscriptionService.php, app/Providers/AppServiceProvider.php
        app/Console/Commands/CheckBillingConfig.php
