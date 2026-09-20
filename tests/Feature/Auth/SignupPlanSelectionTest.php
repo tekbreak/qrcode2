@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\SignupService;
 use Database\Seeders\PlanSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -101,9 +102,15 @@ class SignupPlanSelectionTest extends TestCase
 
     public function test_choose_plan_retries_after_user_was_created_on_failed_attempt(): void
     {
+        // Stands in for the row the failed attempt created: it carries the very
+        // hash the pending signup holds, which is what identifies it as this
+        // signup's own row rather than someone else's account.
+        $password = Hash::make('password123');
+
         User::factory()->create([
             'name' => 'Jane Doe',
             'email' => 'jane@example.com',
+            'password' => $password,
         ]);
 
         $this->withSession([
@@ -111,7 +118,7 @@ class SignupPlanSelectionTest extends TestCase
                 'type' => 'email',
                 'name' => 'Jane Doe',
                 'email' => 'jane@example.com',
-                'password' => 'password123',
+                'password' => $password,
             ],
         ]);
 

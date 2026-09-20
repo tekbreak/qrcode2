@@ -59,5 +59,6 @@ return [
     'verify_email_resend' => 'Reenviar correo de verificación',
     'google_email_unverified' => 'Tu cuenta de Google no tiene una dirección de correo verificada.',
     'link_google_from_settings' => 'Ya existe una cuenta con este correo. Inicia sesión con tu contraseña y luego conecta Google desde tus ajustes.',
+    'email_already_registered' => 'Ya existe una cuenta con este correo. Inicia sesión en su lugar.',
     'password_incorrect' => 'La contraseña introducida es incorrecta.',
 ];

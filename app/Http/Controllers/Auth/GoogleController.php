@@ -48,6 +48,13 @@ class GoogleController extends Controller
 
             $user->update(['avatar' => $googleUser->getAvatar()]);
 
+            // Google vouched for the address above, so there is nothing for the
+            // user to confirm. This also repairs accounts that were created
+            // before the OAuth signup path persisted the timestamp.
+            if (! $user->hasVerifiedEmail()) {
+                $user->markEmailAsVerified();
+            }
+
             Auth::login($user, remember: true);
 
             return redirect()->intended(route('dashboard'));

@@ -21,7 +21,12 @@
     @endif
 
     @if(session('error'))
-        <div class="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">{{ session('error') }}</div>
+        <div class="mt-4 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">
+            {{ session('error') }}
+            @guest
+                <a href="{{ route('login') }}" class="ml-1 font-semibold underline">{{ __('auth.sign_in') }}</a>
+            @endguest
+        </div>
     @endif
 
     <div class="mt-8 flex items-center justify-center gap-3">

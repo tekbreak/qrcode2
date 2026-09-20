@@ -124,6 +124,15 @@ class SignupService
         $existingUser = User::where('email', $pending['email'])->first();
 
         if ($existingUser) {
+            // A row for this address exists that did not when the signup was
+            // stored: either this same signup submitted twice, or someone else
+            // claiming the address in between. Only the former may continue --
+            // returning any other account hands the caller a session for it
+            // without ever having authenticated against it.
+            if (! $this->pendingSignupCreated($existingUser, $pending)) {
+                throw new \RuntimeException(__('auth.email_already_registered'));
+            }
+
             return $existingUser;
         }
 
@@ -135,10 +144,17 @@ class SignupService
         if ($pending['type'] === 'oauth') {
             $attributes['google_id'] = $pending['google_id'];
             $attributes['avatar'] = $pending['avatar'];
-            $attributes['email_verified_at'] = now();
             $attributes['password'] = str()->random(24);
 
-            return User::create($attributes);
+            // Google has already verified the address, so the account starts
+            // out verified. 'email_verified_at' is not fillable, so it has to
+            // be forced past mass assignment -- through create() it would be
+            // silently dropped and the user would land on the verification
+            // notice with no way off it.
+            $user = new User($attributes);
+            $user->forceFill(['email_verified_at' => now()])->save();
+
+            return $user;
         }
 
         // Already hashed in storeEmailSignup(); forceFill past the 'hashed' cast
@@ -147,6 +163,33 @@ class SignupService
         $user->forceFill(['password' => $pending['password']])->save();
 
         return $user;
+    }
+
+    /**
+     * Whether $user is the row this pending signup already created, as opposed
+     * to a pre-existing account that merely shares the address.
+     *
+     * @param  array<string, mixed>  $pending
+     */
+    protected function pendingSignupCreated(User $user, array $pending): bool
+    {
+        if (($pending['type'] ?? null) === 'oauth') {
+            $googleId = $pending['google_id'] ?? null;
+
+            return is_string($googleId)
+                && is_string($user->google_id)
+                && hash_equals($user->google_id, $googleId);
+        }
+
+        // The pending password was hashed once, in storeEmailSignup(), and
+        // written to the row verbatim. An identical hash therefore means this
+        // signup is what wrote it -- no other account could match, since bcrypt
+        // salts every hash of the same password differently.
+        $password = $pending['password'] ?? null;
+
+        return is_string($password)
+            && is_string($user->password)
+            && hash_equals($user->password, $password);
     }
 
     protected function finalizeSignup(

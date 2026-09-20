@@ -59,5 +59,6 @@ return [
     'verify_email_resend' => 'Resend verification email',
     'google_email_unverified' => 'Your Google account does not have a verified email address.',
     'link_google_from_settings' => 'An account with this email already exists. Sign in with your password first, then connect Google from your settings.',
+    'email_already_registered' => 'An account with this email already exists. Please sign in instead.',
     'password_incorrect' => 'The password you entered is incorrect.',
 ];
