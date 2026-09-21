@@ -115,11 +115,34 @@
             </div>
         </header>
 
+        {{-- Impersonation notice: an admin is working inside this account --}}
+        @if(session()->has(\App\Services\ImpersonationService::SESSION_KEY))
+            <div class="border-b border-amber-200 bg-amber-50 px-4 py-2.5 sm:px-6 dark:border-amber-900/60 dark:bg-amber-950/40">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <p class="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+                        <i class="fa-solid fa-user-secret" aria-hidden="true"></i>
+                        {{ __('admin.impersonating_banner', ['name' => auth()->user()?->name]) }}
+                    </p>
+                    <form method="POST" action="{{ route('impersonate.stop') }}">
+                        @csrf
+                        <button type="submit" class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700">
+                            {{ __('admin.stop_impersonating') }}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        @endif
+
         {{-- Page content --}}
         <main class="p-4 sm:p-6 lg:p-8">
             @if(session('status'))
                 <div class="mb-6 rounded-lg bg-green-50 p-4 text-sm text-green-700 dark:bg-green-950/50 dark:text-green-400">
                     {{ session('status') }}
+                </div>
+            @endif
+            @if(session('error'))
+                <div class="mb-6 rounded-lg bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">
+                    {{ session('error') }}
                 </div>
             @endif
             {{ $slot }}

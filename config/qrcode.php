@@ -7,6 +7,8 @@ return [
 
     'proxy_scheme' => env('PROXY_SCHEME', 'https'),
 
+    'currency_symbol' => env('CURRENCY_SYMBOL', '€'),
+
     'paid_action_price_cents' => 100,
 
     'paid_action_stripe_price_id' => env('STRIPE_PAID_ACTION_PRICE_ID'),

@@ -5,7 +5,11 @@ use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\PaidActionController;
-use App\Livewire\Admin\AdminDashboard;
+use App\Livewire\Admin\AdminOverview;
+use App\Livewire\Admin\AdminRevenue;
+use App\Livewire\Admin\AdminUsage;
+use App\Livewire\Admin\AdminUserDetail;
+use App\Livewire\Admin\AdminUsers;
 use App\Livewire\Analytics\AnalyticsIndex;
 use App\Livewire\Auth\ChoosePlan;
 use App\Livewire\Auth\ForgotPassword;
@@ -21,6 +25,7 @@ use App\Livewire\QrCodes\QrCodeBuilder;
 use App\Livewire\QrCodes\QrCodeIndex;
 use App\Livewire\Settings\SettingsIndex;
 use App\Livewire\Teams\TeamManager;
+use App\Services\ImpersonationService;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Support\Facades\Route;
 
@@ -67,6 +72,14 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/email/verify', VerifyEmail::class)->name('verification.notice');
 
+    Route::post('/impersonate/stop', function (ImpersonationService $impersonation) {
+        if (! $impersonation->stop()) {
+            return back()->with('error', __('admin.impersonation_not_active'));
+        }
+
+        return redirect()->route('admin.users')->with('status', __('admin.impersonation_ended'));
+    })->middleware('throttle:20,1')->name('impersonate.stop');
+
     Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
         $request->fulfill();
 
@@ -101,6 +114,10 @@ Route::middleware(['auth', 'plan.selected'])->group(function () {
 
     // Admin routes
     Route::middleware('admin')->prefix('admin')->group(function () {
-        Route::get('/', AdminDashboard::class)->name('admin.dashboard');
+        Route::get('/', AdminOverview::class)->name('admin.dashboard');
+        Route::get('/users', AdminUsers::class)->name('admin.users');
+        Route::get('/users/{user}', AdminUserDetail::class)->name('admin.users.show');
+        Route::get('/revenue', AdminRevenue::class)->name('admin.revenue');
+        Route::get('/usage', AdminUsage::class)->name('admin.usage');
     });
 });
