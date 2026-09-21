@@ -1,11 +1,22 @@
+@php
+    // Shared with <x-structured-data> below, so the JSON-LD can never claim a
+    // price or an answer the page does not actually show.
+    $plans = [
+        ['tier' => \App\Enums\PlanTier::Starter, 'monthly' => 0, 'yearly_total' => 0, 'static_limit' => 5, 'dynamic_limit' => 1, 'popular' => false],
+        ['tier' => \App\Enums\PlanTier::Pro, 'monthly' => 10, 'yearly_total' => 99, 'static_limit' => null, 'dynamic_limit' => 10, 'popular' => true],
+        ['tier' => \App\Enums\PlanTier::Enterprise, 'monthly' => 39, 'yearly_total' => 389, 'static_limit' => null, 'dynamic_limit' => null, 'popular' => false],
+    ];
+    $faqKeys = ['dynamic', 'paid_edits', 'url_change', 'analytics', 'domains', 'cancel'];
+@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#ffffff">
-    <title>{{ config('app.name') }} - {{ __('landing.meta_title') }}</title>
-    <meta name="description" content="{{ __('landing.meta_description') }}">
+    <x-seo :title="config('app.name').' - '.__('landing.meta_title')"
+           :description="__('landing.meta_description')" />
+    <x-structured-data :plans="$plans" :faq-keys="$faqKeys" />
     @include('partials.theme-init')
     @include('partials.exclusive-dropdown')
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -112,13 +123,6 @@
                 </div>
 
                 <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    @php
-                    $plans = [
-                        ['tier' => \App\Enums\PlanTier::Starter, 'monthly' => 0, 'yearly_total' => 0, 'static_limit' => 5, 'dynamic_limit' => 1, 'popular' => false],
-                        ['tier' => \App\Enums\PlanTier::Pro, 'monthly' => 10, 'yearly_total' => 99, 'static_limit' => null, 'dynamic_limit' => 10, 'popular' => true],
-                        ['tier' => \App\Enums\PlanTier::Enterprise, 'monthly' => 39, 'yearly_total' => 389, 'static_limit' => null, 'dynamic_limit' => null, 'popular' => false],
-                    ];
-                    @endphp
                     @foreach($plans as $plan)
                         <div class="relative rounded-2xl bg-white p-8 shadow-sm ring-1 dark:bg-zinc-900 {{ ($plan['popular'] ?? false) ? 'ring-primary-600 ring-2 dark:ring-primary-500' : 'ring-gray-200 dark:ring-zinc-800' }}">
                             @if($plan['popular'] ?? false)
@@ -186,9 +190,6 @@
         <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
             <h2 class="text-center text-3xl font-bold text-gray-900 sm:text-4xl dark:text-gray-100">{{ __('landing.faq.title') }}</h2>
             <div class="mt-12 space-y-4" x-data="{ open: null }">
-                @php
-                $faqKeys = ['dynamic', 'paid_edits', 'url_change', 'analytics', 'domains', 'cancel'];
-                @endphp
                 @foreach($faqKeys as $i => $key)
                     <div class="rounded-xl border border-gray-200 dark:border-zinc-800">
                         <button @click="open = open === {{ $i }} ? null : {{ $i }}" class="flex w-full items-center justify-between px-6 py-4 text-left">

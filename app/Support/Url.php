@@ -44,4 +44,33 @@ class Url
     {
         return self::isSafe($url) ? trim((string) $url) : null;
     }
+
+    /**
+     * The host APP_URL points at, lowercased and without its port.
+     */
+    public static function canonicalHost(): string
+    {
+        $host = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        return strtolower(is_string($host) ? $host : '');
+    }
+
+    /**
+     * Whether a request host is the public site rather than one of the
+     * short-link domains. Anything unrecognised - the proxy domain, a customer
+     * domain pointed at us, a bare IP - is deliberately treated as not
+     * canonical, so crawler rules default to the restrictive branch.
+     */
+    public static function isCanonicalHost(?string $host): bool
+    {
+        $canonical = self::canonicalHost();
+
+        if ($canonical === '' || ! is_string($host) || $host === '') {
+            return false;
+        }
+
+        $host = strtolower(strtok($host, ':'));
+
+        return $host === $canonical || $host === 'www.'.$canonical;
+    }
 }

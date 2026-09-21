@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Url;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -15,6 +16,13 @@ class SecurityHeaders
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('X-Frame-Options', 'DENY');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+        // The short-link domains must never be indexed: a crawl of a slug fires
+        // RecordScanJob, so bot traffic would land in a customer's analytics.
+        // robots.txt alone would not stop an already-linked slug being indexed.
+        if (! Url::isCanonicalHost($request->getHost())) {
+            $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
+        }
 
         // Routes that set their own (the short-link pages use no-referrer) win.
         if (! $response->headers->has('Referrer-Policy')) {

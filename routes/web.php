@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\PaidActionController;
+use App\Http\Controllers\SeoController;
 use App\Livewire\Admin\AdminOverview;
 use App\Livewire\Admin\AdminRevenue;
 use App\Livewire\Admin\AdminUsage;
@@ -33,6 +34,11 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('landing.index');
 })->name('landing');
+
+// Crawler files. Registered without a domain constraint so the short-link
+// proxy domain gets the restrictive robots.txt from the same handler.
+Route::get('/robots.txt', [SeoController::class, 'robots'])->name('robots');
+Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
 
 Route::post('/language/switch', [LanguageController::class, 'switch'])
     ->middleware('throttle:30,1')
