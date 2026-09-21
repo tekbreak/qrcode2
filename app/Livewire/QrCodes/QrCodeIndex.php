@@ -18,6 +18,7 @@ class QrCodeIndex extends Component
     public string $filterCategory = '';
     public ?int $viewingQrId = null;
     public ?int $downloadingQrId = null;
+    public ?int $previewingQrId = null;
 
     public function updatingFilterCategory(): void
     {
@@ -109,6 +110,29 @@ class QrCodeIndex extends Component
         $this->viewingQrId = null;
     }
 
+    public function preview(int $id): void
+    {
+        $qr = auth()->user()->qrCodes()->findOrFail($id);
+        $this->authorize('view', $qr);
+        $this->previewingQrId = $qr->id;
+    }
+
+    public function closePreview(): void
+    {
+        $this->previewingQrId = null;
+    }
+
+    protected function renderPreview(QrCode $qr): ?string
+    {
+        try {
+            return app(QrCodeGeneratorService::class)->generateBase64Preview($qr, 400);
+        } catch (\Throwable $e) {
+            logger()->error('QR preview generation failed: ' . $e->getMessage());
+
+            return null;
+        }
+    }
+
     public function render()
     {
         $query = auth()->user()->qrCodes()
@@ -131,6 +155,10 @@ class QrCodeIndex extends Component
             $query->where('category_id', $this->filterCategory);
         }
 
+        $previewingQr = $this->previewingQrId
+            ? auth()->user()->qrCodes()->with('design', 'shortLink')->find($this->previewingQrId)
+            : null;
+
         return view('livewire.qr-codes.qr-code-index', [
             'qrCodes' => $query->paginate(12),
             'categories' => auth()->user()->categories()->orderBy('name')->get(),
@@ -140,6 +168,8 @@ class QrCodeIndex extends Component
             'downloadingQr' => $this->downloadingQrId
                 ? auth()->user()->qrCodes()->find($this->downloadingQrId)
                 : null,
+            'previewingQr' => $previewingQr,
+            'previewImage' => $previewingQr ? $this->renderPreview($previewingQr) : null,
             'downloadFormats' => [
                 ['id' => 'png', 'label' => 'PNG', 'feature' => Feature::ExportPng, 'icon' => 'fa-solid fa-image'],
                 ['id' => 'jpg', 'label' => 'JPG', 'feature' => Feature::ExportJpg, 'icon' => 'fa-solid fa-image'],

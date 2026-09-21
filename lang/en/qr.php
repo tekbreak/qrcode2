@@ -105,6 +105,8 @@ return [
     'link_copied' => 'Link copied!',
     'view_content' => 'View content',
     'encoded_data' => 'Encoded QR data',
+    'preview_qr' => 'View QR code',
+    'preview_failed' => 'Preview unavailable.',
     'fields' => [
         'first_name' => 'First name',
         'last_name' => 'Last name',

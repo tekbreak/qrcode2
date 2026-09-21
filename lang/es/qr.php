@@ -105,6 +105,8 @@ return [
     'link_copied' => '¡Enlace copiado!',
     'view_content' => 'Ver contenido',
     'encoded_data' => 'Datos codificados del QR',
+    'preview_qr' => 'Ver código QR',
+    'preview_failed' => 'Vista previa no disponible.',
     'fields' => [
         'first_name' => 'Nombre',
         'last_name' => 'Apellido',

@@ -91,6 +91,12 @@
                         <span class="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{{ number_format($qr->total_scans) }} {{ __('qr.scans') }}</span>
 
                         <div class="flex items-center gap-2">
+                        <button type="button"
+                                wire:click="preview({{ $qr->id }})"
+                                title="{{ __('qr.preview_qr') }}"
+                                class="rounded p-1.5 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition">
+                            <i class="fa-solid fa-qrcode text-sm"></i>
+                        </button>
                         @if($qr->is_dynamic)
                         <a href="{{ route('qr-codes.edit', $qr) }}"
                            title="{{ __('common.edit') }}"
@@ -206,6 +212,39 @@
                     <h3 class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ __('qr.encoded_data') }}</h3>
                     <pre class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-zinc-800/60 dark:text-gray-300">{{ $viewingQr->getEncodedContent() }}</pre>
                 </div>
+            </div>
+        </div>
+    @endif
+
+    @if($previewingQr)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" wire:click.self="closePreview">
+            <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl dark:bg-zinc-900" wire:click.stop>
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-gray-100">{{ $previewingQr->name }}</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ $previewingQr->type->label() }}</p>
+                    </div>
+                    <button type="button" wire:click="closePreview" title="{{ __('common.cancel') }}"
+                            class="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-zinc-800 dark:hover:text-gray-200">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                @if($previewImage)
+                    <div class="mt-5 flex justify-center rounded-xl border border-gray-200 bg-white p-4 dark:border-zinc-800">
+                        <img src="{{ $previewImage }}" alt="{{ $previewingQr->name }}" class="h-64 w-64">
+                    </div>
+                @else
+                    <div class="mt-5 flex h-64 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 dark:border-zinc-700">
+                        <span class="text-sm text-gray-400 dark:text-gray-500">{{ __('qr.preview_failed') }}</span>
+                    </div>
+                @endif
+
+                <button type="button" wire:click="openDownload({{ $previewingQr->id }})"
+                        class="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700">
+                    <i class="fa-solid fa-download text-sm"></i>
+                    {{ __('common.download') }}
+                </button>
             </div>
         </div>
     @endif
